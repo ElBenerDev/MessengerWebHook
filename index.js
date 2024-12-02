@@ -1,5 +1,9 @@
+import("dotenv").then(dotenv => dotenv.config());
+
+
 // Carga las variables de entorno
-require("dotenv").config();
+console.log("Contenido del archivo .env:", process.env);
+
 
 const express = require("express");
 const app = express();
