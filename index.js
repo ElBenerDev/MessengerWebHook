@@ -1,92 +1,115 @@
-require("dotenv").config();
-const express = require("express");
-const axios = require("axios");
-const { getAssistantResponse } = require("./assistant"); // Importar la lógica de OpenAI
+require('dotenv').config(); // Cargar las variables del archivo .env
+const express = require('express');
+const axios = require('axios');
+const bodyParser = require('body-parser');
+
 const app = express();
+const port = process.env.PORT || 5000;
 
-const PORT = process.env.PORT || 8080;
+// Configurar middleware para procesar JSON
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
-console.log("VERIFY_TOKEN desde .env:", process.env.VERIFY_TOKEN);
+// Ruta de verificación del webhook
+app.get('/webhook', (req, res) => {
+    const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
-app.use(express.json());
+    // Verificar el token de la solicitud de verificación de Messenger
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
 
-// Ruta raíz para probar que el servidor está funcionando
-app.get("/", (req, res) => {
-  console.log("Solicitud recibida en la raíz '/'");
-  res.send("Servidor de Messenger Webhook funcionando correctamente.");
-});
-
-// Ruta para verificar el webhook de Facebook
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  console.log("Token recibido:", token);
-  console.log("Challenge recibido:", challenge);
-  console.log("Token esperado:", process.env.VERIFY_TOKEN);
-
-  if (mode && token) {
-    if (token === process.env.VERIFY_TOKEN) {
-      console.log("Token de verificación correcto.");
-      res.status(200).send(challenge);
-    } else {
-      console.error("Token de verificación incorrecto.");
-      res.sendStatus(403);
+    if (mode && token) {
+        if (token === VERIFY_TOKEN) {
+            res.status(200).send(challenge);
+        } else {
+            res.sendStatus(403);
+        }
     }
-  } else {
-    console.error("Parámetros inválidos.");
-    res.sendStatus(400);
-  }
 });
 
-// Ruta para manejar los mensajes recibidos desde Messenger
-app.post("/webhook", async (req, res) => {
-  console.log("Solicitud POST recibida en /webhook");
-  const body = req.body;
+// Ruta para manejar mensajes entrantes de Messenger
+app.post('/webhook', async (req, res) => {
+    const data = req.body;
 
-  if (body.object === "page") {
-    body.entry.forEach(async (entry) => {
-      const webhookEvent = entry.messaging[0];
-      console.log("Evento recibido:", webhookEvent);
+    // Verificar que la solicitud contiene eventos de mensajes
+    if (data.object === 'page') {
+        data.entry.forEach(entry => {
+            const messagingEvent = entry.messaging[0];
+            const senderId = messagingEvent.sender.id;
+            const messageText = messagingEvent.message.text;
 
-      if (webhookEvent.message && webhookEvent.sender) {
-        const senderId = webhookEvent.sender.id;
-        const messageText = webhookEvent.message.text;
+            // Llamar a la función para procesar el mensaje con OpenAI
+            handleUserMessage(senderId, messageText);
+        });
 
-        console.log(`Mensaje recibido de ${senderId}: ${messageText}`);
-
-        // Obtener respuesta del asistente personalizado
-        const assistantResponse = await getAssistantResponse(messageText);
-        console.log("Respuesta del asistente:", assistantResponse);
-
-        // Enviar la respuesta al usuario de Messenger
-        await sendMessageToMessenger(senderId, assistantResponse);
-      }
-    });
-
-    res.status(200).send("EVENT_RECEIVED");
-  } else {
-    console.error("Objeto no soportado recibido.");
-    res.sendStatus(404);
-  }
+        res.status(200).send('EVENT_RECEIVED');
+    } else {
+        res.sendStatus(404);
+    }
 });
 
-// Función para enviar un mensaje a Messenger
-async function sendMessageToMessenger(senderId, messageText) {
-  const requestBody = {
-    recipient: { id: senderId },
-    message: { text: messageText },
-  };
+// Función para interactuar con OpenAI
+async function handleUserMessage(senderId, message) {
+    try {
+        const responseMessage = await interactuarConAsistente(message);
 
-  try {
-    await axios.post(`https://graph.facebook.com/v15.0/me/messages?access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`, requestBody);
-    console.log(`Mensaje enviado a ${senderId}: ${messageText}`);
-  } catch (error) {
-    console.error("Error al enviar mensaje a Messenger:", error.message);
-  }
+        // Enviar la respuesta de OpenAI al usuario de Messenger
+        await enviarMensaje(senderId, responseMessage);
+    } catch (error) {
+        console.error('Error al interactuar con OpenAI:', error);
+        await enviarMensaje(senderId, 'Lo siento, hubo un problema al procesar tu mensaje.');
+    }
 }
 
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+// Función para interactuar con OpenAI
+async function interactuarConAsistente(mensaje) {
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+
+    try {
+        const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+                model: 'gpt-4', // Asegúrate de usar el modelo correcto
+                messages: [
+                    { role: 'user', content: mensaje }
+                ]
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${openaiApiKey}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        const responseMessage = response.data.choices[0].message.content;
+        return responseMessage;
+    } catch (error) {
+        console.error('Error al interactuar con OpenAI:', error.response ? error.response.data : error.message);
+        throw new Error('Error al procesar el mensaje');
+    }
+}
+
+// Función para enviar mensajes a Messenger
+async function enviarMensaje(senderId, text) {
+    const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
+    
+    try {
+        const response = await axios.post(
+            `https://graph.facebook.com/v12.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+            {
+                recipient: { id: senderId },
+                message: { text }
+            }
+        );
+        console.log('Mensaje enviado:', response.data);
+    } catch (error) {
+        console.error('Error al enviar mensaje a Messenger:', error.response ? error.response.data : error.message);
+    }
+}
+
+// Iniciar el servidor
+app.listen(port, () => {
+    console.log(`Servidor en ejecución en http://localhost:${port}`);
 });
