@@ -16,5 +16,6 @@
         "@types/dotenv": "^6.1.1"
     },
     "author": "",
-    "license": "ISC"
+    "license": "ISC",
+    "keywords": []
 }
