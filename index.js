@@ -9,27 +9,29 @@ const PORT = process.env.PORT || 8080;
 app.use(express.json());
 
 // Ruta de verificación del webhook
+// Ruta de verificación del webhook
 app.get("/webhook", (req, res) => {
-  // Extraer los parámetros enviados por Facebook
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  // Agregar logs para verificar los valores de los parámetros
-  console.log("Modo recibido:", mode);  // Debería ser 'subscribe'
-  console.log("Token recibido:", token);  // El token enviado por Facebook
-  console.log("Token esperado:", process.env.VERIFY_TOKEN);  // El token que has configurado en .env
-  console.log("Challenge recibido:", challenge);  // El challenge que Facebook envía
-
-  // Verificar que el token recibido coincida con el que tenemos en el archivo .env
-  if (mode && token && token === process.env.VERIFY_TOKEN) {
-    console.log("Token de verificación correcto");  // Si el token es correcto
-    res.status(200).send(challenge);  // Enviar el challenge de vuelta a Facebook
-  } else {
-    console.log("Token de verificación incorrecto");  // Si el token no coincide
-    res.sendStatus(403);  // Si el token no coincide, responder con 403 (Forbidden)
-  }
-});
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+  
+    console.log("Token recibido:", token);  // Log para ver el token que Facebook envió
+    console.log("Challenge recibido:", challenge);  // Log para ver el challenge que Facebook envió
+    console.log("Token esperado:", process.env.VERIFY_TOKEN);  // Log para ver el token que tenemos en el archivo .env
+  
+    if (mode && token) {
+      if (token === process.env.VERIFY_TOKEN) {  // Compara el token recibido con el de .env
+        res.status(200).send(challenge);  // Si coinciden, responde con el challenge
+      } else {
+        console.log("Token de verificación incorrecto");  // Log si los tokens no coinciden
+        res.sendStatus(403);  // Responde con Forbidden si los tokens no coinciden
+      }
+    } else {
+      console.log("Parámetros 'mode' o 'token' no encontrados en la solicitud.");
+      res.sendStatus(400);  // Bad Request si no se encuentran los parámetros
+    }
+  });
+  
 
 // Ruta para recibir los mensajes
 app.post("/webhook", (req, res) => {
@@ -78,4 +80,6 @@ app.post("/webhook", (req, res) => {
 // Iniciar el servidor
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  console.log("Token de verificación esperado:", process.env.VERIFY_TOKEN);
+
 });
