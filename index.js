@@ -24,6 +24,11 @@ app.get("/webhook", (req, res) => {
   return res.sendStatus(400);  // Si faltan parámetros requeridos
 });
 
+
+app.get("/", (req, res) => {
+    res.send("Servidor de Messenger Webhook funcionando correctamente.");
+  });
+
 // Función para enviar mensajes a la página de Facebook
 const sendToMessenger = async (sender, messageText) => {
   try {
