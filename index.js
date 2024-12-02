@@ -1,19 +1,24 @@
 require("dotenv").config();
 const express = require("express");
+const axios = require("axios");
+const { getOpenAiResponse } = require("./openai");  // Importamos la función desde openai.js
 const app = express();
 
 const PORT = process.env.PORT || 8080;
+
+// Logs iniciales
 console.log("VERIFY_TOKEN desde .env:", process.env.VERIFY_TOKEN);
 
 // Middleware para parsear JSON
 app.use(express.json());
 
-// Ruta raíz para verificar que el servidor funciona
+// Ruta para verificar que el servidor esté funcionando
 app.get("/", (req, res) => {
+  console.log("Solicitud recibida en la raíz '/'");
   res.send("Servidor de Messenger Webhook funcionando correctamente.");
 });
 
-// Ruta del webhook (verificación y recepción de eventos)
+// Ruta de verificación del webhook
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -21,7 +26,7 @@ app.get("/webhook", (req, res) => {
 
   console.log("Token recibido:", token);
   console.log("Challenge recibido:", challenge);
-  console.log("Token esperado (VERIFY_TOKEN):", process.env.VERIFY_TOKEN);
+  console.log("Token esperado:", process.env.VERIFY_TOKEN);
 
   if (mode && token) {
     if (token === process.env.VERIFY_TOKEN) {
@@ -32,42 +37,37 @@ app.get("/webhook", (req, res) => {
       res.sendStatus(403);
     }
   } else {
-    console.error("Solicitud inválida. Faltan parámetros.");
+    console.error("Parámetros inválidos en la solicitud.");
     res.sendStatus(400);
   }
 });
 
-// Ruta para manejar eventos entrantes desde Facebook
-app.post("/webhook", (req, res) => {
+// Ruta para manejar mensajes enviados desde Facebook Messenger
+app.post("/webhook", async (req, res) => {  // Aquí agregamos `async` al principio
   console.log("Solicitud POST recibida en /webhook");
-  console.log("Headers:", req.headers); // Esto es para ver los headers, por si hay algo importante
-  console.log("Body:", req.body); // Loguea el cuerpo de la solicitud para ver los mensajes
+  console.log("Headers:", req.headers);
+  console.log("Body:", req.body);
 
   const body = req.body;
 
   // Validar que la solicitud provenga de Messenger
   if (body.object === "page") {
-    console.log("Evento recibido de una página de Facebook.");
-
-    body.entry.forEach((entry) => {
-      const webhookEvent = entry.messaging[0]; // El primer evento de la entrada
+    body.entry.forEach(async (entry) => {  // Hacemos también que la función de `forEach` sea async
+      const webhookEvent = entry.messaging[0];
       console.log("Evento recibido:", webhookEvent);
 
-      // Aquí deberías asegurarte de que los mensajes estén llegando
+      // Manejar mensajes aquí
       if (webhookEvent.message && webhookEvent.sender) {
         const senderId = webhookEvent.sender.id;
         const messageText = webhookEvent.message.text;
+
         console.log(`Mensaje recibido de ${senderId}: ${messageText}`);
 
-        // Responde al usuario si es necesario, por ejemplo con un mensaje fijo
-        axios.post(`https://graph.facebook.com/v12.0/me/messages?access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`, {
-          recipient: { id: senderId },
-          message: { text: "Gracias por tu mensaje, te responderé pronto." }
-        }).then(response => {
-          console.log("Mensaje enviado a usuario:", response.data);
-        }).catch(error => {
-          console.error("Error al enviar el mensaje:", error);
-        });
+        // Llamar a OpenAI para obtener una respuesta
+        const openAiResponse = await getOpenAiResponse(messageText);
+
+        // Responder al usuario con la respuesta de OpenAI
+        sendMessageToFacebook(senderId, openAiResponse);
       }
     });
 
@@ -79,7 +79,28 @@ app.post("/webhook", (req, res) => {
   }
 });
 
-// Inicia el servidor
+
+// Función para enviar mensaje a través de la API de Messenger
+const sendMessageToFacebook = (senderId, messageText) => {
+  const url = `https://graph.facebook.com/v12.0/me/messages?access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`;
+
+  const body = {
+    messaging_type: "RESPONSE",
+    recipient: { id: senderId },
+    message: { text: messageText },
+  };
+
+  axios
+    .post(url, body)
+    .then((response) => {
+      console.log("Mensaje enviado a Facebook:", response.data);
+    })
+    .catch((error) => {
+      console.error("Error al enviar mensaje a Facebook:", error);
+    });
+};
+
+// Iniciar el servidor
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
