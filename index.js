@@ -9,20 +9,25 @@ const PORT = process.env.PORT || 8080;
 app.use(express.json());
 
 // Ruta de verificación del webhook
+// Ruta de verificación del webhook
 app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode && token) {
-    if (token === process.env.VERIFY_TOKEN) {
-      return res.status(200).send(challenge);  // Respondemos con el challenge si el token es válido
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+  
+    if (mode && token) {
+      if (token === process.env.VERIFY_TOKEN) {
+        res.status(200).send(challenge);  // Responde con el challenge para completar la verificación
+      } else {
+        console.log("Token incorrecto", token);  // Para verificar que el token enviado es correcto
+        res.sendStatus(403);  // Token no coincide, respuesta 403
+      }
     } else {
-      return res.sendStatus(403);  // Token inválido
+      res.sendStatus(400);  // Faltan parámetros
     }
-  }
-  return res.sendStatus(400);  // Si faltan parámetros requeridos
-});
+  });
+  
+  
 
 
 app.get("/", (req, res) => {
