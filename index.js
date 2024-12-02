@@ -28,8 +28,6 @@ app.get("/webhook", (req, res) => {
   });
   
   
-
-
 app.get("/", (req, res) => {
     res.send("Servidor de Messenger Webhook funcionando correctamente.");
   });
