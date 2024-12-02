@@ -44,16 +44,16 @@ app.post('/webhook', async (req, res) => {
 
       // Interactuar con OpenAI usando el código que proporcionaste
       try {
-        // Crear un hilo de conversación con el asistente de OpenAI
+        // Crear una conversación con OpenAI
         const assistantId = 'asst_Q3M9vDA4aN89qQNH1tDXhjaE';  // Usar el ID de tu asistente
-        const thread = await openai.chat.completions.create({
+        const response = await openai.chat.completions.create({
           model: 'gpt-4',  // Usar el modelo correcto
           messages: [
             { role: 'user', content: messageText },
           ],
         });
 
-        const assistantResponse = thread.choices[0].message.content;
+        const assistantResponse = response.choices[0].message.content;
 
         console.log(`Respuesta del asistente: ${assistantResponse}`);
 
