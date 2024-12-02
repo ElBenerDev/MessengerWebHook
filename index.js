@@ -16,25 +16,38 @@ app.get("/webhook", (req, res) => {
 
   if (mode && token) {
     if (token === process.env.VERIFY_TOKEN) {
-      res.status(200).send(challenge);
+      return res.status(200).send(challenge);  // Respondemos con el challenge si el token es válido
     } else {
-      res.sendStatus(403);
+      return res.sendStatus(403);  // Token inválido
     }
   }
+  return res.sendStatus(400);  // Si faltan parámetros requeridos
 });
 
+// Función para enviar mensajes a la página de Facebook
+const sendToMessenger = async (sender, messageText) => {
+  try {
+    await axios.post(`https://graph.facebook.com/v12.0/me/messages?access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`, {
+      recipient: { id: sender },
+      message: { text: messageText },
+    });
+  } catch (error) {
+    console.error("Error al enviar el mensaje a Messenger:", error);
+  }
+};
+
 // Ruta para recibir los mensajes
-app.post("/webhook", (req, res) => {
+app.post("/webhook", async (req, res) => {
   const messaging_events = req.body.entry[0].messaging;
 
-  messaging_events.forEach((event) => {
+  for (let event of messaging_events) {
     if (event.message) {
       const sender = event.sender.id;
       const text = event.message.text;
 
-      // Llama a OpenAI para obtener la respuesta
-      axios
-        .post("https://api.openai.com/v1/completions", {
+      try {
+        // Llamada a OpenAI para obtener la respuesta
+        const response = await axios.post("https://api.openai.com/v1/completions", {
           model: "text-davinci-003",
           prompt: text,
           max_tokens: 150,
@@ -42,18 +55,17 @@ app.post("/webhook", (req, res) => {
           headers: {
             "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
             "Content-Type": "application/json",
-          }
-        })
-        .then((response) => {
-          // Envía la respuesta de OpenAI al usuario de Messenger
-          axios.post(`https://graph.facebook.com/v12.0/me/messages?access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`, {
-            recipient: { id: sender },
-            message: { text: response.data.choices[0].text.trim() }
-          });
-        })
-        .catch((error) => console.error("Error al contactar con OpenAI:", error));
+          },
+        });
+
+        // Enviar respuesta de OpenAI a Messenger
+        const openAiText = response.data.choices[0].text.trim();
+        await sendToMessenger(sender, openAiText);
+      } catch (error) {
+        console.error("Error al contactar con OpenAI:", error);
+      }
     }
-  });
+  }
 
   res.status(200).send("EVENT_RECEIVED");
 });
