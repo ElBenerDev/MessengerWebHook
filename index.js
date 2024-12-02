@@ -1,5 +1,6 @@
 // Carga las variables de entorno
 require("dotenv").config();
+
 const express = require("express");
 const app = express();
 
@@ -7,7 +8,9 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // Logs iniciales para confirmar la carga de las variables de entorno
+console.log("Configurando servidor...");
 console.log("VERIFY_TOKEN desde .env:", process.env.VERIFY_TOKEN);
+console.log("FB_PAGE_ACCESS_TOKEN desde .env:", process.env.FB_PAGE_ACCESS_TOKEN);
 
 // Middleware para parsear JSON
 app.use(express.json());
@@ -26,7 +29,7 @@ app.get("/webhook", (req, res) => {
 
   console.log("Token recibido:", token);
   console.log("Challenge recibido:", challenge);
-  console.log("Token esperado:", process.env.VERIFY_TOKEN);
+  console.log("Token esperado (VERIFY_TOKEN):", process.env.VERIFY_TOKEN);
 
   if (mode && token) {
     if (token === process.env.VERIFY_TOKEN) {
