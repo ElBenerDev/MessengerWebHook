@@ -2,11 +2,11 @@ require('dotenv').config();  // Cargar variables de entorno desde el archivo .en
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
-const OpenAI = require('openai');  // Para interactuar con OpenAI
+const { OpenAI } = require('openai');  // Importar la clase OpenAI
 
 // Configuración de OpenAI
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY,  // Cargar API Key desde el archivo .env
 });
 
 // Configuración de Facebook
@@ -44,16 +44,16 @@ app.post('/webhook', async (req, res) => {
 
       // Interactuar con OpenAI usando el código que proporcionaste
       try {
-        // Crear un hilo con el asistente
+        // Crear una conversación con OpenAI
         const assistantId = 'asst_Q3M9vDA4aN89qQNH1tDXhjaE';  // Usar el ID de tu asistente
-        const thread = await openai.chat.completions.create({
+        const response = await openai.chat.completions.create({
           model: 'gpt-4',  // Usar el modelo correcto
           messages: [
             { role: 'user', content: messageText },
           ],
         });
 
-        const assistantResponse = thread.choices[0].message.content;
+        const assistantResponse = response.choices[0].message.content;
 
         console.log(`Respuesta del asistente: ${assistantResponse}`);
 
@@ -80,10 +80,14 @@ async function sendMessage(senderId, text) {
   };
 
   try {
-    await axios.post(`https://graph.facebook.com/v12.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, messageData);
+    // Enviar la solicitud a la API de Facebook Messenger
+    const response = await axios.post(
+      `https://graph.facebook.com/v12.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      messageData
+    );
     console.log(`Mensaje enviado a ${senderId}: ${text}`);
   } catch (error) {
-    console.error('Error al enviar mensaje a Messenger:', error);
+    console.error('Error al enviar mensaje a Messenger:', error.response ? error.response.data : error.message);
   }
 }
 
