@@ -58,6 +58,33 @@ app.post("/webhook", (req, res) => {
   res.status(200).send("EVENT_RECEIVED");
 });
 
+// Ruta para manejar la autenticación de Google OAuth
+app.get("/callback", (req, res) => {
+  // Aquí puedes manejar el intercambio del código de Google OAuth por un token de acceso
+  const code = req.query.code;
+  
+  if (code) {
+    axios.post('https://oauth2.googleapis.com/token', {
+      code: code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: process.env.REDIRECT_URI,
+      grant_type: 'authorization_code',
+    })
+    .then(response => {
+      // Aquí puedes guardar el token y usarlo para acceder a la API de Google
+      console.log('Token de acceso:', response.data.access_token);
+      res.send('Autenticación exitosa');
+    })
+    .catch(error => {
+      console.error('Error al intercambiar el código de Google:', error);
+      res.send('Error en la autenticación');
+    });
+  } else {
+    res.send('Falta el código de autenticación');
+  }
+});
+
 // Inicia el servidor
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
