@@ -1,11 +1,9 @@
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const { OpenAI } = require('openai');
-const { AssistantEventHandler } = require('openai');  // Usando require
-const { override } = require('typing_extensions');  // Usando require
+import 'dotenv/config';  // Usamos import para dotenv
+import express from 'express';
+import axios from 'axios';
+import { OpenAI } from 'openai';  // Usar import para OpenAI
+import { AssistantEventHandler } from 'openai';  // Usar import para AssistantEventHandler
 
-// Inicializamos la app de Express
 const app = express();
 const port = process.env.PORT || 3000;
 
