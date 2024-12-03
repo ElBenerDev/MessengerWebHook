@@ -1,6 +1,5 @@
 import { OpenAI } from 'openai';
 import dotenv from 'dotenv';
-import readline from 'readline';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -13,13 +12,7 @@ const openai = new OpenAI({
 // Crear un hilo de conversación
 let threadId = null;
 
-// Configurar la interfaz de lectura de línea
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
-
-// Crear un manejador de eventos para manejar la transmisión de respuestas
+// Configurar el manejador de eventos
 class EventHandler {
   // Evento cuando el asistente envía texto
   onTextCreated(text) {
@@ -56,32 +49,27 @@ class EventHandler {
   }
 }
 
-// Función para continuar la conversación
-async function continueConversation() {
-  // Crear un hilo de conversación
-  const thread = await openai.chat.createThread({
-    messages: [],
-  });
-  threadId = thread.id;
-  console.log("Hilo creado:", threadId);
+// Función para interactuar con el asistente y obtener respuesta
+export async function interactWithAssistant(userMessage) {
+  // Crear un hilo de conversación solo si no existe
+  if (!threadId) {
+    const thread = await openai.chat.createThread({
+      messages: [],
+    });
+    threadId = thread.id;
+    console.log("Hilo creado:", threadId);
+  }
 
   const eventHandler = new EventHandler();
 
-  // Función para escuchar el input del usuario
-  rl.on('line', async (input) => {
-    if (input.toLowerCase() === 'salir') {
-      console.log("Terminando conversación...");
-      rl.close();
-      return;
-    }
-
-    // Enviar el mensaje del usuario al hilo
+  try {
+    // Enviar mensaje del usuario al hilo
     await openai.chat.sendMessage({
       threadId: threadId,
       role: 'user',
-      content: input,
+      content: userMessage,
     });
-    console.log("Mensaje enviado:", input);
+    console.log("Mensaje enviado:", userMessage);
 
     // Usar el stream para obtener respuestas en tiempo real
     const stream = openai.chat.stream({
@@ -91,10 +79,11 @@ async function continueConversation() {
 
     // Esperar que la respuesta esté lista
     await stream.untilDone();
-  });
+    
+    return "Respuesta completada";  // Aquí puedes devolver la respuesta procesada del asistente si lo deseas
 
-  console.log("\nTú: ");
+  } catch (error) {
+    console.error('Error al interactuar con el asistente:', error);
+    throw error; // Lanza el error para que sea manejado en el webhook
+  }
 }
-
-// Iniciar la conversación continua
-continueConversation();
