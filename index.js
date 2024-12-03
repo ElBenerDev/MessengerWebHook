@@ -25,8 +25,13 @@ app.post('/webhook', async (req, res) => {
         // Llamar a interactWithAssistant para obtener la respuesta del asistente
         const assistantResponse = await interactWithAssistant(messageText);
 
-        // Enviar la respuesta al usuario
-        await sendMessage(senderId, assistantResponse);
+        // Verifica que el mensaje tenga contenido válido antes de enviarlo
+        if (assistantResponse && assistantResponse.trim() !== "") {
+          // Enviar la respuesta al usuario
+          await sendMessage(senderId, assistantResponse);
+        } else {
+          console.error("Error: El mensaje generado por el asistente está vacío.");
+        }
 
         res.sendStatus(200); // Responder con éxito
       } catch (error) {
@@ -75,7 +80,6 @@ async function sendMessage(senderId, text) {
     console.error("Error al enviar mensaje a Messenger:", error);
   }
 }
-
 
 // Iniciar el servidor
 const PORT = process.env.PORT || 3000;
