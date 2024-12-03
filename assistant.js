@@ -1,11 +1,11 @@
-const { OpenAI } = require('openai');
+import { OpenAI } from 'openai';
 
 // Configuración del cliente OpenAI
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const assistantId = 'asst_Q3M9vDA4aN89qQNH1tDXhjaE';
 
 // Función para manejar mensajes del usuario
-async function handleUserMessage(userMessage) {
+export async function handleUserMessage(userMessage) {
   try {
     // Crear un hilo de conversación
     const thread = await client.beta.threads.create();
@@ -37,5 +37,3 @@ async function handleUserMessage(userMessage) {
     throw new Error('No se pudo procesar el mensaje.');
   }
 }
-
-module.exports = { handleUserMessage };
