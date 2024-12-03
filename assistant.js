@@ -1,5 +1,4 @@
 import OpenAI from "openai";
-import readline from "readline";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -7,10 +6,36 @@ const openai = new OpenAI({
 
 const assistantId = "asst_Q3M9vDA4aN89qQNH1tDXhjaE";
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-});
+// Clase para manejar los eventos del asistente
+class EventHandler {
+  onTextCreated(text) {
+    console.log(`\nAsistente: ${text}`);
+  }
+
+  onTextDelta(delta, snapshot) {
+    if (delta.value) process.stdout.write(delta.value);
+  }
+
+  onToolCallCreated(toolCall) {
+    console.log(`\nAsistente > ${toolCall.type}`);
+  }
+
+  onToolCallDelta(delta, snapshot) {
+    if (delta.code_interpreter) {
+      if (delta.code_interpreter.input) {
+        console.log(delta.code_interpreter.input);
+      }
+      if (delta.code_interpreter.outputs) {
+        console.log("\n\nSalida > ");
+        delta.code_interpreter.outputs.forEach((output) => {
+          if (output.type === "logs") {
+            console.log(output.logs);
+          }
+        });
+      }
+    }
+  }
+}
 
 async function continueConversation(userMessage) {
   try {
@@ -19,37 +44,24 @@ async function continueConversation(userMessage) {
     console.log("Hilo creado:", thread.id);
 
     // Enviar el mensaje del usuario al hilo
+    console.log("\nEnviando mensaje del usuario al hilo...");
     const message = await openai.beta.threads.messages.create(thread.id, {
       role: "user",
       content: userMessage,
     });
     console.log("Mensaje enviado al hilo:", message);
 
-    // Obtener la respuesta del asistente
+    // Obtener la respuesta del asistente sin flujo, solo la respuesta directa
     const assistantResponse = await openai.beta.threads.messages.create(thread.id, {
       role: "assistant",
-      content: "¡Hola, soy tu asistente! ¿Cómo puedo ayudarte?",
+      content: "respond",  // Esto es solo un ejemplo, dependiendo de la API
     });
 
     console.log("Respuesta del asistente:", assistantResponse);
 
-    // Inspeccionar la estructura completa de la respuesta
-    if (assistantResponse.content && assistantResponse.content.length > 0) {
-      const responseText = assistantResponse.content[0]?.text;
-      if (responseText) {
-        console.log("Texto de la respuesta del asistente (inspeccionado):", responseText);
-        return responseText.content || responseText;  // Acceder al contenido correctamente
-      } else {
-        console.log("El campo 'text' no contiene un texto válido.");
-        return null;
-      }
-    } else {
-      console.log("No se encontró contenido en la respuesta del asistente.");
-      return null;
-    }
+    return assistantResponse;
   } catch (error) {
     console.error("Error en la conversación:", error);
-    throw error;
   }
 }
 
