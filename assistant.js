@@ -42,42 +42,39 @@ class EventHandler {
   }
 }
 
-async function continueConversation() {
+async function continueConversation(userMessage) {
   try {
+    // Crear un hilo para la conversación
     const thread = await openai.beta.threads.create({});
     console.log("Hilo creado:", thread.id);
 
     const eventHandler = new EventHandler();
 
-    console.log("\nTú:");
-
-    rl.on("line", async (userMessage) => {
-      if (userMessage.toLowerCase() === "salir") {
-        console.log("Terminando conversación...");
-        rl.close();
-        return;
-      }
-
-      const message = await openai.beta.threads.messages.create(thread.id, {
-        role: "user",
-        content: userMessage,
-      });
-      console.log("Mensaje enviado:", message);
-
-      const stream = await openai.beta.threads.runs.stream(thread.id, {
-        assistant_id: assistantId,
-        event_handler: eventHandler,
-      });
-
-      await stream.untilDone();
+    // Enviar el mensaje del usuario al hilo
+    console.log("\nEnviando mensaje del usuario al hilo...");
+    const message = await openai.beta.threads.messages.create(thread.id, {
+      role: "user",
+      content: userMessage,
     });
+    console.log("Mensaje enviado al hilo:", message);
+
+    // Obtener el flujo de respuestas
+    const stream = await openai.beta.threads.runs.stream(thread.id, {
+      assistant_id: assistantId,
+      event_handler: eventHandler,
+    });
+
+    console.log("Esperando respuesta del asistente...");
+    await stream.untilDone();
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error en la conversación:", error);
   }
 }
 
 async function interactWithAssistant(userMessage) {
-  await continueConversation();
+  console.log("Iniciando conversación con el asistente...");
+  await continueConversation(userMessage);
+  console.log("Conversación completada.");
 }
 
 export { interactWithAssistant };
