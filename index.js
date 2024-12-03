@@ -3,7 +3,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import { OpenAI } from 'openai';  // Importar la clase OpenAI
-import { AssistantEventHandler, override } from 'openai';  // Importar el manejador de eventos
+import { AssistantEventHandler } from 'openai';  // Importar el manejador de eventos
 
 // Configuración de OpenAI
 const client = new OpenAI({
@@ -82,14 +82,12 @@ async function sendMessageToAssistant(senderId, userMessage) {
 
   // Crear un manejador de eventos para manejar las respuestas
   class EventHandler extends AssistantEventHandler {
-    @override
     on_text_created(text) {
       // Este evento se dispara cuando se crea texto en el flujo
       console.log(`Asistente: ${text.value}`);
       sendMessage(senderId, text.value);  // Enviar respuesta al usuario
     }
 
-    @override
     on_text_delta(delta, snapshot) {
       // Este evento se dispara cuando el texto cambia o se agrega en el flujo
       console.log(delta.value);
