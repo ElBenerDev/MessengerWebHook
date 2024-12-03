@@ -3,6 +3,7 @@ import express from 'express';
 import axios from 'axios';
 import { handleUserMessage } from './assistant.js'; // Importamos la lógica del asistente
 
+// Cargar variables de entorno
 dotenv.config();
 
 // Inicializamos la app de Express
@@ -11,9 +12,9 @@ const port = process.env.PORT || 8080;
 
 app.use(express.json());
 
-// Función para enviar mensaje a Messenger
+// Función para enviar mensajes a Messenger
 async function sendMessageToMessenger(recipientId, message) {
-  const pageAccessToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN; // Cargado desde .env
+  const pageAccessToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN; // Token de página
   const pageId = process.env.PAGE_ID; // ID de la página
 
   const url = `https://graph.facebook.com/v12.0/${pageId}/messages?access_token=${pageAccessToken}`;
@@ -86,7 +87,7 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200); // Confirmamos la recepción del mensaje
 });
 
-// Iniciamos el servidor
+// Iniciar el servidor
 app.listen(port, () => {
   console.log(`Servidor escuchando en puerto ${port}`);
 });

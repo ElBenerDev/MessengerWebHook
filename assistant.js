@@ -1,39 +1,41 @@
-import { OpenAI } from 'openai';
+const { OpenAI } = require('openai');
 
-// Configuramos el cliente de OpenAI
+// Configuración del cliente OpenAI
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const assistantId = process.env.ASSISTANT_ID;
+const assistantId = 'asst_Q3M9vDA4aN89qQNH1tDXhjaE';
 
-// Crear y manejar el hilo de conversación
-const thread = await client.beta.threads.create();
-console.log('Hilo creado:', thread);
-
-// Función para manejar los mensajes del usuario
-export async function handleUserMessage(userMessage) {
+// Función para manejar mensajes del usuario
+async function handleUserMessage(userMessage) {
   try {
-    const responseChunks = [];
+    // Crear un hilo de conversación
+    const thread = await client.beta.threads.create();
 
-    // Enviar el mensaje del usuario al asistente
+    // Enviar el mensaje del usuario al hilo
     await client.beta.threads.messages.create({
       thread_id: thread.id,
-      role: 'user', // Aquí se asegura de incluir el rol del mensaje
+      role: 'user',
       content: userMessage,
     });
 
-    // Crear y manejar la respuesta del asistente
+    // Obtener la respuesta del asistente
+    let assistantResponse = '';
     await client.beta.threads.runs.stream(
       {
         thread_id: thread.id,
         assistant_id: assistantId,
       },
       {
-        onData: (data) => responseChunks.push(data.value), // Capturamos el contenido del texto
+        onData: (data) => {
+          assistantResponse += data.value; // Acumular el texto recibido
+        },
       }
     );
 
-    return responseChunks.join(''); // Retornamos la respuesta completa
+    return assistantResponse.trim(); // Retornar la respuesta completa
   } catch (error) {
-    console.error('Error en handleUserMessage:', error);
-    throw new Error('Error al generar la respuesta del asistente.');
+    console.error('Error en handleUserMessage:', error.message);
+    throw new Error('No se pudo procesar el mensaje.');
   }
 }
+
+module.exports = { handleUserMessage };
