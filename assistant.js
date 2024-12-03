@@ -33,8 +33,16 @@ async function continueConversation(userMessage) {
 
     console.log("Respuesta del asistente:", assistantResponse);
 
-    // Retornar la respuesta generada
-    return assistantResponse;
+    // Aquí extraemos correctamente el texto del asistente
+    const assistantMessage = assistantResponse.content[0]?.text?.content;
+
+    if (assistantMessage) {
+      console.log("Texto de la respuesta del asistente:", assistantMessage);
+      return assistantMessage;  // Retornamos solo el texto
+    } else {
+      console.log("El asistente no respondió con un texto válido.");
+      return null;
+    }
   } catch (error) {
     console.error("Error en la conversación:", error);
     throw error;
