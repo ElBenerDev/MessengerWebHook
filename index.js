@@ -3,15 +3,27 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import { OpenAI } from 'openai';  // Importar la clase OpenAI
+import { AssistantEventHandler, override } from 'openai';  // Importar el manejador de eventos
 
 // Configuración de OpenAI
-const openai = new OpenAI({
+const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,  // Cargar API Key desde el archivo .env
 });
 
 // Configuración de Facebook
 const PAGE_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN; // Token de acceso a la página de Facebook
 const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;  // Token de verificación
+
+// Crear un asistente y un hilo de conversación
+const assistant_id = "asst_Q3M9vDA4aN89qQNH1tDXhjaE";  // Usar el ID de tu asistente
+let thread;
+
+client.beta.threads.create().then((createdThread) => {
+  thread = createdThread;
+  console.log("Hilo creado:", thread);
+}).catch((err) => {
+  console.error("Error al crear el hilo:", err);
+});
 
 const app = express();
 app.use(bodyParser.json());
@@ -42,36 +54,11 @@ app.post('/webhook', async (req, res) => {
 
       console.log(`Mensaje recibido de ${senderId}: ${messageText}`);
 
-      // Crear un hilo de conversación con el asistente de OpenAI
+      // Enviar mensaje al hilo con OpenAI
       try {
-        const assistantId = 'asst_Q3M9vDA4aN89qQNH1tDXhjaE';  // Usar el ID de tu asistente
-        const thread = await openai.chat.threads.create();
-
-        // Enviar el mensaje del usuario al hilo
-        const userMessage = await openai.chat.messages.create({
-          thread_id: thread.id,
-          role: 'user',
-          content: messageText,
-        });
-
-        console.log(`Mensaje enviado al hilo: ${userMessage.content}`);
-
-        // Crear y manejar la respuesta del asistente en el flujo
-        const responseStream = openai.chat.threads.stream({
-          thread_id: thread.id,
-          assistant_id: assistantId,
-          event_handler: new EventHandler(senderId),  // Pasar el senderId al manejador de eventos
-        });
-
-        // Escuchar las respuestas del asistente
-        for await (const message of responseStream) {
-          // Se procesa la respuesta cuando llega
-          if (message.role === 'assistant') {
-            console.log(`Asistente: ${message.content}`);
-            await sendMessage(senderId, message.content);  // Enviar respuesta al usuario
-          }
-        }
-
+        // Crear y manejar la respuesta del asistente
+        await sendMessageToAssistant(senderId, messageText);
+        
         res.sendStatus(200);  // Responder con éxito
       } catch (error) {
         console.error('Error al interactuar con OpenAI:', error);
@@ -83,6 +70,48 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(404);  // No encontrado
   }
 });
+
+// Función para interactuar con OpenAI
+async function sendMessageToAssistant(senderId, userMessage) {
+  // Enviar mensaje del usuario al hilo de OpenAI
+  await client.beta.threads.messages.create({
+    thread_id: thread.id,
+    role: 'user',
+    content: userMessage
+  });
+
+  // Crear un manejador de eventos para manejar las respuestas
+  class EventHandler extends AssistantEventHandler {
+    @override
+    on_text_created(text) {
+      // Este evento se dispara cuando se crea texto en el flujo
+      console.log(`Asistente: ${text.value}`);
+      sendMessage(senderId, text.value);  // Enviar respuesta al usuario
+    }
+
+    @override
+    on_text_delta(delta, snapshot) {
+      // Este evento se dispara cuando el texto cambia o se agrega en el flujo
+      console.log(delta.value);
+      sendMessage(senderId, delta.value);  // Enviar respuesta al usuario
+    }
+  }
+
+  // Usar el flujo para recibir respuestas del asistente
+  const eventHandler = new EventHandler();
+
+  // Crear y manejar la respuesta del asistente
+  try {
+    const stream = await client.beta.threads.runs.stream({
+      thread_id: thread.id,
+      assistant_id: assistant_id,
+      event_handler: eventHandler
+    });
+    await stream.until_done();
+  } catch (error) {
+    console.error("Error al recibir respuesta del asistente:", error);
+  }
+}
 
 // Función para enviar mensajes a través de Messenger
 async function sendMessage(senderId, text) {
@@ -100,28 +129,6 @@ async function sendMessage(senderId, text) {
     console.log(`Mensaje enviado a ${senderId}: ${text}`);
   } catch (error) {
     console.error('Error al enviar mensaje a Messenger:', error.response ? error.response.data : error.message);
-  }
-}
-
-// Clase para manejar los eventos de respuesta del asistente (simula la parte de streaming)
-class EventHandler {
-  constructor(senderId) {
-    this.senderId = senderId;
-  }
-
-  // Maneja el texto generado por el asistente
-  on_text_created(text) {
-    console.log(`Respuesta del asistente: ${text}`);
-  }
-
-  // Maneja los cambios en el texto generado por el asistente (streaming)
-  on_text_delta(delta) {
-    console.log(delta.value);  // Imprime los cambios del texto
-  }
-
-  // Enviar un mensaje cuando la respuesta está lista
-  on_done() {
-    sendMessage(this.senderId, '¡Gracias por esperar! Estoy aquí para ayudarte.');
   }
 }
 
