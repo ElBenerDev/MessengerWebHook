@@ -1,7 +1,10 @@
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios');
-const OpenAI = require('openai');
+import dotenv from 'dotenv';
+import express from 'express';
+import axios from 'axios';
+import { OpenAI } from 'openai';
+
+// Cargar las variables de entorno desde .env
+dotenv.config();
 
 // Inicializamos la app de Express
 const app = express();
