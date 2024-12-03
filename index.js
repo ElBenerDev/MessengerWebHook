@@ -23,7 +23,10 @@ app.post('/webhook', async (req, res) => {
 
       try {
         // Llamar a interactWithAssistant para obtener la respuesta del asistente
+        console.log("Llamando a interactWithAssistant...");
         const assistantResponse = await interactWithAssistant(messageText);
+
+        console.log("Respuesta del asistente:", assistantResponse);
 
         // Verifica que el mensaje tenga contenido válido antes de enviarlo
         if (assistantResponse && assistantResponse.trim() !== "") {
