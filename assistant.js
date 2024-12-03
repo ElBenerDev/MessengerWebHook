@@ -76,7 +76,7 @@ async function continueConversation() {
   }
 }
 
-async function interactWithAssistant() {
+async function interactWithAssistant(userMessage) {
   await continueConversation();
 }
 
