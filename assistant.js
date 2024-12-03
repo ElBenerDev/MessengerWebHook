@@ -48,8 +48,6 @@ async function continueConversation(userMessage) {
     const thread = await openai.beta.threads.create({});
     console.log("Hilo creado:", thread.id);
 
-    const eventHandler = new EventHandler();
-
     // Enviar el mensaje del usuario al hilo
     console.log("\nEnviando mensaje del usuario al hilo...");
     const message = await openai.beta.threads.messages.create(thread.id, {
@@ -58,14 +56,15 @@ async function continueConversation(userMessage) {
     });
     console.log("Mensaje enviado al hilo:", message);
 
-    // Obtener el flujo de respuestas
-    const stream = await openai.beta.threads.runs.stream(thread.id, {
-      assistant_id: assistantId,
-      event_handler: eventHandler,
+    // Obtener la respuesta del asistente sin flujo, solo la respuesta directa
+    const assistantResponse = await openai.beta.threads.messages.create(thread.id, {
+      role: "assistant",
+      content: "respond",  // Esto es solo un ejemplo, dependiendo de la API
     });
 
-    console.log("Esperando respuesta del asistente...");
-    await stream.untilDone();
+    console.log("Respuesta del asistente:", assistantResponse);
+
+    return assistantResponse;
   } catch (error) {
     console.error("Error en la conversación:", error);
   }
@@ -73,8 +72,9 @@ async function continueConversation(userMessage) {
 
 async function interactWithAssistant(userMessage) {
   console.log("Iniciando conversación con el asistente...");
-  await continueConversation(userMessage);
-  console.log("Conversación completada.");
+  const assistantResponse = await continueConversation(userMessage);
+  console.log("Conversación completada. Respuesta del asistente:", assistantResponse);
+  return assistantResponse;
 }
 
 export { interactWithAssistant };
