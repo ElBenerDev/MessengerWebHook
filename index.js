@@ -1,30 +1,22 @@
-import 'dotenv/config';  // Usamos import para dotenv
-import express from 'express';
-import axios from 'axios';
-import { OpenAI } from 'openai';  // Usar import para OpenAI
+require('dotenv').config();
+const express = require('express');
+const axios = require('axios');
+const OpenAI = require('openai');
 
+// Inicializamos la app de Express
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Configuración del cliente de OpenAI
-const client = new OpenAI({
+// Configurando el cliente de OpenAI
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
-});
-
-// Crear un asistente y un hilo de conversación
-let thread;
-client.beta.threads.create().then((createdThread) => {
-  thread = createdThread;
-  console.log("Hilo creado:", thread);
-}).catch((err) => {
-  console.error("Error al crear el hilo:", err);
 });
 
 // Función para enviar mensaje a Messenger
 async function sendMessageToMessenger(recipientId, message) {
-  const pageAccessToken = process.env.PAGE_ACCESS_TOKEN; // Cargado desde .env
+  const pageAccessToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN; // Usamos la nueva variable de entorno
   const pageId = process.env.PAGE_ID; // ID de la página
 
   const url = `https://graph.facebook.com/v12.0/${pageId}/messages?access_token=${pageAccessToken}`;
@@ -77,8 +69,7 @@ app.post('/webhook', async (req, res) => {
 
     // Si se recibe un mensaje, procesamos la respuesta con el asistente de OpenAI
     try {
-      // Usamos el método de chat tradicional de OpenAI para obtener una respuesta
-      const completion = await client.chat.completions.create({
+      const completion = await openai.chat.completions.create({
         model: 'gpt-4', // O el modelo que prefieras
         messages: [
           { role: 'user', content: receivedMessage }
@@ -88,7 +79,7 @@ app.post('/webhook', async (req, res) => {
       const assistantMessage = completion.choices[0].message.content;
       console.log("Respuesta del asistente:", assistantMessage);
 
-      // Enviar la respuesta generada del asistente a Messenger
+      // Enviar la respuesta generada al usuario en Messenger
       await sendMessageToMessenger(senderId, assistantMessage);
 
     } catch (error) {
