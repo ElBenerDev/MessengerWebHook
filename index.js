@@ -50,19 +50,23 @@ async function sendMessage(senderId, text) {
   };
 
   try {
-    const response = await fetch(`https://graph.facebook.com/v12.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(messageData),
-    });
+    const response = await fetch(
+      `https://graph.facebook.com/v16.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(messageData),
+      }
+    );
 
     if (!response.ok) {
-      throw new Error(`Error al enviar mensaje: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`Error al enviar mensaje: ${response.statusText}, ${errorText}`);
     }
 
     console.log(`Mensaje enviado a ${senderId}: ${text}`);
   } catch (error) {
-    console.error('Error al enviar mensaje a Messenger:', error);
+    console.error("Error al enviar mensaje a Messenger:", error);
   }
 }
 
