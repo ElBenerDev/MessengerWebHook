@@ -1,59 +1,67 @@
-const axios = require("axios");
+const axios = require('axios');
+const { OpenAI } = require('openai');
 
-// Configuración de tu cliente con la API de OpenAI
-const client = axios.create({
-  baseURL: 'https://api.openai.com/v1',
-  headers: {
-    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-    'Content-Type': 'application/json'
-  }
+// Configuración de OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY, // Cargar API Key desde el archivo .env
 });
 
-// Crear un asistente y un hilo de conversación
-let threadId = null;
-const assistantId = "asst_Q3M9vDA4aN89qQNH1tDXhjaE";
+// Token de acceso a la página de Facebook
+const PAGE_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
-// Crear un nuevo hilo de conversación
-async function createThread() {
-  try {
-    const response = await client.post('/beta/threads/create');
-    threadId = response.data.id;
-    console.log("Hilo creado:", threadId);
-  } catch (error) {
-    console.error("Error al crear hilo:", error.message);
+// Función para manejar mensajes entrantes
+async function handleMessage(req, res) {
+  const data = req.body;
+
+  if (data.object === 'page') {
+    data.entry.forEach(async (entry) => {
+      const messagingEvent = entry.messaging[0];
+      const senderId = messagingEvent.sender.id;
+      const messageText = messagingEvent.message.text;
+
+      console.log(`Mensaje recibido de ${senderId}: ${messageText}`);
+
+      try {
+        // Crear un hilo de conversación con OpenAI
+        const thread = await openai.chat.completions.create({
+          model: 'gpt-4', // Usar el modelo correcto
+          messages: [{ role: 'user', content: messageText }],
+        });
+
+        const assistantResponse = thread.choices[0].message.content;
+        console.log(`Respuesta del asistente: ${assistantResponse}`);
+
+        // Enviar la respuesta al usuario a través de Messenger
+        await sendMessage(senderId, assistantResponse);
+
+        res.sendStatus(200); // Responder con éxito
+      } catch (error) {
+        console.error('Error al interactuar con OpenAI:', error);
+        await sendMessage(senderId, 'Lo siento, hubo un problema al procesar tu mensaje.');
+        res.sendStatus(500); // Error en el servidor
+      }
+    });
+  } else {
+    res.sendStatus(404); // No encontrado
   }
 }
 
-// Función para obtener respuesta del asistente personalizado
-async function getAssistantResponse(userMessage) {
+// Función para enviar mensajes a través de Messenger
+async function sendMessage(senderId, text) {
+  const messageData = {
+    recipient: { id: senderId },
+    message: { text: text },
+  };
+
   try {
-    // Crear el hilo si no se ha creado aún
-    if (!threadId) {
-      await createThread();
-    }
-
-    // Enviar mensaje del usuario al asistente
-    await client.post(`/beta/threads/messages.create`, {
-      thread_id: threadId,
-      role: 'user',
-      content: userMessage
-    });
-
-    // Obtener la respuesta del asistente (streaming)
-    const response = await client.post(`/beta/threads/runs.stream`, {
-      thread_id: threadId,
-      assistant_id: assistantId,
-    });
-
-    // Extraer el texto de la respuesta
-    const assistantText = response.data.choices[0].message.content;
-    return assistantText;
+    const response = await axios.post(
+      `https://graph.facebook.com/v12.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+      messageData
+    );
+    console.log(`Mensaje enviado a ${senderId}: ${text}`);
   } catch (error) {
-    console.error("Error al interactuar con OpenAI:", error.message);
-    return "Lo siento, hubo un problema al procesar tu mensaje.";
+    console.error('Error al enviar mensaje a Messenger:', error.response ? error.response.data : error.message);
   }
 }
 
-module.exports = {
-  getAssistantResponse
-};
+module.exports = { handleMessage };
