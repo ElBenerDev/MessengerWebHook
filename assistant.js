@@ -16,7 +16,7 @@ export async function handleUserMessage(userMessage) {
     // Enviar el mensaje del usuario al asistente
     await client.beta.threads.messages.create({
       thread_id: thread.id,
-      role: 'user', // Aseguramos que el rol sea especificado correctamente
+      role: 'user', // Aquí se asegura de incluir el rol del mensaje
       content: userMessage,
     });
 
