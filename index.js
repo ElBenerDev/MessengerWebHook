@@ -1,9 +1,9 @@
-import express from 'express';
-import axios from 'axios';
-import { OpenAI } from 'openai';
-import { AssistantEventHandler } from 'openai';
-import { override } from 'typing_extensions';
-
+require('dotenv').config();
+const express = require('express');
+const axios = require('axios');
+const { OpenAI } = require('openai');
+const { AssistantEventHandler } = require('openai');  // Usando require
+const { override } = require('typing_extensions');  // Usando require
 
 // Inicializamos la app de Express
 const app = express();
@@ -82,12 +82,10 @@ app.post('/webhook', async (req, res) => {
     try {
       // Usamos el método streaming de OpenAI para obtener una respuesta en tiempo real
       class EventHandler extends AssistantEventHandler {
-        @override
         onTextCreated(text) {
           console.log(`Asistente: ${text.value}`);
         }
 
-        @override
         onTextDelta(delta) {
           console.log(delta.value);
         }
