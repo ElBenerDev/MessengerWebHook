@@ -1,45 +1,46 @@
-import { OpenAI } from 'openai';
-import dotenv from 'dotenv';
+import OpenAI from "openai";
+import readline from "readline";
 
-// Cargar variables de entorno
-dotenv.config();
-
-// Crear cliente de OpenAI con la clave de la API
+// Configurar cliente OpenAI con la API key
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,  // La API Key debe estar en .env
+  apiKey: process.env.OPENAI_API_KEY, // La API key debe estar en el archivo .env
 });
 
-// Crear un hilo de conversación
-let threadId = null;
+// Crear ID del asistente
+const assistantId = "asst_Q3M9vDA4aN89qQNH1tDXhjaE";
 
-// Configurar el manejador de eventos
+// Crear interfaz para input de usuario en la terminal
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+// Clase EventHandler para manejar eventos
 class EventHandler {
-  // Evento cuando el asistente envía texto
+  // Evento cuando el asistente crea texto
   onTextCreated(text) {
-    console.log(`Asistente: ${text}`);
+    console.log(`\nAsistente: ${text}`);
   }
 
-  // Evento cuando hay un cambio en el texto del asistente
+  // Evento cuando hay cambios en el texto del asistente
   onTextDelta(delta, snapshot) {
-    if (delta && delta.value) {
-      process.stdout.write(delta.value);
-    }
+    if (delta.value) process.stdout.write(delta.value);
   }
 
-  // Evento cuando se llama a una herramienta
+  // Evento cuando el asistente llama a herramientas
   onToolCallCreated(toolCall) {
     console.log(`\nAsistente > ${toolCall.type}`);
   }
 
-  // Manejo de la salida de herramientas
+  // Manejo de salidas de herramientas
   onToolCallDelta(delta, snapshot) {
-    if (delta && delta.code_interpreter) {
+    if (delta.code_interpreter) {
       if (delta.code_interpreter.input) {
         console.log(delta.code_interpreter.input);
       }
       if (delta.code_interpreter.outputs) {
         console.log("\n\nSalida > ");
-        delta.code_interpreter.outputs.forEach(output => {
+        delta.code_interpreter.outputs.forEach((output) => {
           if (output.type === "logs") {
             console.log(output.logs);
           }
@@ -49,41 +50,50 @@ class EventHandler {
   }
 }
 
-// Función para interactuar con el asistente y obtener respuesta
-export async function interactWithAssistant(userMessage) {
-  // Crear un hilo de conversación solo si no existe
-  if (!threadId) {
-    const thread = await openai.chat.createThread({
-      messages: [],
-    });
-    threadId = thread.id;
-    console.log("Hilo creado:", threadId);
-  }
-
-  const eventHandler = new EventHandler();
-
+// Función para iniciar conversación continua
+async function continueConversation() {
   try {
-    // Enviar mensaje del usuario al hilo
-    await openai.chat.sendMessage({
-      threadId: threadId,
-      role: 'user',
-      content: userMessage,
+    // Crear hilo de conversación
+    const thread = await openai.beta.threads.create({});
+    console.log("Hilo creado:", thread.id);
+
+    const eventHandler = new EventHandler();
+
+    console.log("\nTú:");
+
+    // Leer input del usuario de manera continua
+    rl.on("line", async (userMessage) => {
+      if (userMessage.toLowerCase() === "salir") {
+        console.log("Terminando conversación...");
+        rl.close();
+        return;
+      }
+
+      // Crear mensaje en el hilo
+      const message = await openai.beta.threads.messages.create(thread.id, {
+        role: "user",
+        content: userMessage,
+      });
+      console.log("Mensaje enviado:", message);
+
+      // Generar respuesta en tiempo real
+      const stream = await openai.beta.threads.runs.stream(thread.id, {
+        assistant_id: assistantId,
+        event_handler: eventHandler,
+      });
+
+      // Esperar hasta que la respuesta esté completa
+      await stream.untilDone();
     });
-    console.log("Mensaje enviado:", userMessage);
-
-    // Usar el stream para obtener respuestas en tiempo real
-    const stream = openai.chat.stream({
-      threadId: threadId,
-      eventHandler: eventHandler,
-    });
-
-    // Esperar que la respuesta esté lista
-    await stream.untilDone();
-    
-    return "Respuesta completada";  // Aquí puedes devolver la respuesta procesada del asistente si lo deseas
-
   } catch (error) {
-    console.error('Error al interactuar con el asistente:', error);
-    throw error; // Lanza el error para que sea manejado en el webhook
+    console.error("Error:", error);
   }
+}
+
+// Exportar función principal para usar en otros archivos
+export { continueConversation };
+
+// Iniciar conversación si este archivo se ejecuta directamente
+if (require.main === module) {
+  continueConversation();
 }
