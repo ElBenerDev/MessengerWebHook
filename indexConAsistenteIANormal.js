@@ -1,40 +1,43 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import axios from 'axios';
-import { handleUserMessage } from './assistant.js'; // Importamos la lógica del asistente
+import { OpenAI } from 'openai';
 
+// Cargar las variables de entorno desde .env
 dotenv.config();
 
 // Inicializamos la app de Express
 const app = express();
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
+// Configurando el cliente de OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
 // Función para enviar mensaje a Messenger
 async function sendMessageToMessenger(recipientId, message) {
-  const pageAccessToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN; // Cargado desde .env
+  const pageAccessToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN; // Usamos la nueva variable de entorno
   const pageId = process.env.PAGE_ID; // ID de la página
 
   const url = `https://graph.facebook.com/v12.0/${pageId}/messages?access_token=${pageAccessToken}`;
 
   const data = {
     recipient: {
-      id: recipientId,
+      id: recipientId
     },
     message: {
-      text: message,
-    },
+      text: message
+    }
   };
 
   try {
     const response = await axios.post(url, data);
-    console.log('Mensaje enviado:', response.data);
+    console.log("Mensaje enviado:", response.data);
   } catch (error) {
-    console.error(
-      'Error al enviar mensaje a Messenger:',
-      error.response ? error.response.data : error.message
-    );
+    console.error("Error al enviar mensaje a Messenger:", error.response ? error.response.data : error.message);
   }
 }
 
@@ -59,7 +62,7 @@ app.get('/webhook', (req, res) => {
 // Webhook para recibir mensajes
 app.post('/webhook', async (req, res) => {
   const messagingEvents = req.body.entry[0].messaging;
-
+  
   for (let i = 0; i < messagingEvents.length; i++) {
     const event = messagingEvents[i];
     const senderId = event.sender.id;
@@ -67,19 +70,24 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
 
+    // Si se recibe un mensaje, procesamos la respuesta con el asistente de OpenAI
     try {
-      // Procesamos el mensaje con la lógica del asistente
-      const assistantResponse = await handleUserMessage(receivedMessage);
-      console.log('Respuesta del asistente:', assistantResponse);
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4', // O el modelo que prefieras
+        messages: [
+          { role: 'user', content: receivedMessage }
+        ]
+      });
+
+      const assistantMessage = completion.choices[0].message.content;
+      console.log("Respuesta del asistente:", assistantMessage);
 
       // Enviar la respuesta generada al usuario en Messenger
-      await sendMessageToMessenger(senderId, assistantResponse);
+      await sendMessageToMessenger(senderId, assistantMessage);
+
     } catch (error) {
-      console.error('Error al interactuar con el asistente:', error);
-      await sendMessageToMessenger(
-        senderId,
-        'Lo siento, hubo un problema al procesar tu mensaje.'
-      );
+      console.error("Error al interactuar con OpenAI:", error);
+      await sendMessageToMessenger(senderId, "Lo siento, hubo un problema al procesar tu mensaje.");
     }
   }
 

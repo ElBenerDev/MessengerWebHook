@@ -1,75 +1,57 @@
-import OpenAI from "openai";
+import { OpenAI, AssistantEventHandler } from 'openai';
+import { override } from 'typing-extensions';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Configuramos el cliente de OpenAI
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const assistantId = process.env.ASSISTANT_ID;
 
-const assistantId = "asst_Q3M9vDA4aN89qQNH1tDXhjaE";
+// Crear y manejar el hilo de conversación
+const thread = await client.beta.threads.create();
+console.log('Hilo creado:', thread);
 
-// Clase para manejar los eventos del asistente
-class EventHandler {
-  onTextCreated(text) {
-    console.log(`\nAsistente: ${text}`);
+// Manejador de eventos para manejar la respuesta del asistente
+class EventHandler extends AssistantEventHandler {
+  @override
+  on_text_created(text) {
+    // Este evento se dispara cuando se crea texto en el flujo
+    return text.value; // Retornamos el texto generado
   }
 
-  onTextDelta(delta, snapshot) {
-    if (delta.value) process.stdout.write(delta.value);
-  }
-
-  onToolCallCreated(toolCall) {
-    console.log(`\nAsistente > ${toolCall.type}`);
-  }
-
-  onToolCallDelta(delta, snapshot) {
-    if (delta.code_interpreter) {
-      if (delta.code_interpreter.input) {
-        console.log(delta.code_interpreter.input);
-      }
-      if (delta.code_interpreter.outputs) {
-        console.log("\n\nSalida > ");
-        delta.code_interpreter.outputs.forEach((output) => {
-          if (output.type === "logs") {
-            console.log(output.logs);
-          }
-        });
-      }
-    }
+  @override
+  on_text_delta(delta, snapshot) {
+    // Este evento se dispara cuando el texto cambia o se agrega en el flujo
+    return delta.value; // Retornamos el texto parcial generado
   }
 }
 
-async function continueConversation(userMessage) {
+// Función para manejar los mensajes del usuario
+export async function handleUserMessage(userMessage) {
   try {
-    // Crear un hilo para la conversación
-    const thread = await openai.beta.threads.create({});
-    console.log("Hilo creado:", thread.id);
+    const responseChunks = [];
+    const eventHandler = new EventHandler();
 
-    // Enviar el mensaje del usuario al hilo
-    console.log("\nEnviando mensaje del usuario al hilo...");
-    const message = await openai.beta.threads.messages.create(thread.id, {
-      role: "user",
+    // Enviar el mensaje del usuario al asistente
+    await client.beta.threads.messages.create({
+      thread_id: thread.id,
+      role: 'user',
       content: userMessage,
     });
-    console.log("Mensaje enviado al hilo:", message);
 
-    // Obtener la respuesta del asistente sin flujo, solo la respuesta directa
-    const assistantResponse = await openai.beta.threads.messages.create(thread.id, {
-      role: "assistant",
-      content: "respond",  // Esto es solo un ejemplo, dependiendo de la API
-    });
+    // Crear y manejar la respuesta del asistente
+    await client.beta.threads.runs.stream(
+      {
+        thread_id: thread.id,
+        assistant_id: assistantId,
+        event_handler: eventHandler,
+      },
+      {
+        onData: (data) => responseChunks.push(data),
+      }
+    );
 
-    console.log("Respuesta del asistente:", assistantResponse);
-
-    return assistantResponse;
+    return responseChunks.join(''); // Retornamos la respuesta completa
   } catch (error) {
-    console.error("Error en la conversación:", error);
+    console.error('Error en handleUserMessage:', error);
+    throw new Error('Error al generar la respuesta del asistente.');
   }
 }
-
-async function interactWithAssistant(userMessage) {
-  console.log("Iniciando conversación con el asistente...");
-  const assistantResponse = await continueConversation(userMessage);
-  console.log("Conversación completada. Respuesta del asistente:", assistantResponse);
-  return assistantResponse;
-}
-
-export { interactWithAssistant };
