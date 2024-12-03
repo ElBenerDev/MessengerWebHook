@@ -44,6 +44,12 @@ app.post('/webhook', async (req, res) => {
 async function sendMessage(senderId, text) {
   const PAGE_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
+  // Verifica que el mensaje tenga contenido válido
+  if (!text || text.trim() === "") {
+    console.error("Error: El mensaje no puede estar vacío.");
+    return;
+  }
+
   const messageData = {
     recipient: { id: senderId },
     message: { text: text },
@@ -69,6 +75,7 @@ async function sendMessage(senderId, text) {
     console.error("Error al enviar mensaje a Messenger:", error);
   }
 }
+
 
 // Iniciar el servidor
 const PORT = process.env.PORT || 3000;
