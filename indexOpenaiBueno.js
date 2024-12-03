@@ -3,6 +3,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import { OpenAI } from 'openai';  // Importar la clase OpenAI
+import readline from 'readline';  // Para manejar la entrada de texto
 
 // Configuración de OpenAI
 const openai = new OpenAI({
@@ -42,35 +43,23 @@ app.post('/webhook', async (req, res) => {
 
       console.log(`Mensaje recibido de ${senderId}: ${messageText}`);
 
-      // Crear un hilo de conversación con el asistente de OpenAI
+      // Interactuar con OpenAI usando el código que proporcionaste
       try {
+        // Crear un hilo de conversación con el asistente de OpenAI
         const assistantId = 'asst_Q3M9vDA4aN89qQNH1tDXhjaE';  // Usar el ID de tu asistente
-        const thread = await openai.chat.threads.create();
-
-        // Enviar el mensaje del usuario al hilo
-        const userMessage = await openai.chat.messages.create({
-          thread_id: thread.id,
-          role: 'user',
-          content: messageText,
+        const thread = await openai.chat.completions.create({
+          model: 'gpt-4',  // Usar el modelo correcto
+          messages: [
+            { role: 'user', content: messageText },
+          ],
         });
 
-        console.log(`Mensaje enviado al hilo: ${userMessage.content}`);
+        const assistantResponse = thread.choices[0].message.content;
 
-        // Crear y manejar la respuesta del asistente en el flujo
-        const responseStream = openai.chat.threads.stream({
-          thread_id: thread.id,
-          assistant_id: assistantId,
-          event_handler: new EventHandler(senderId),  // Pasar el senderId al manejador de eventos
-        });
+        console.log(`Respuesta del asistente: ${assistantResponse}`);
 
-        // Escuchar las respuestas del asistente
-        for await (const message of responseStream) {
-          // Se procesa la respuesta cuando llega
-          if (message.role === 'assistant') {
-            console.log(`Asistente: ${message.content}`);
-            await sendMessage(senderId, message.content);  // Enviar respuesta al usuario
-          }
-        }
+        // Enviar la respuesta al usuario a través de Messenger
+        await sendMessage(senderId, assistantResponse);
 
         res.sendStatus(200);  // Responder con éxito
       } catch (error) {
@@ -100,28 +89,6 @@ async function sendMessage(senderId, text) {
     console.log(`Mensaje enviado a ${senderId}: ${text}`);
   } catch (error) {
     console.error('Error al enviar mensaje a Messenger:', error.response ? error.response.data : error.message);
-  }
-}
-
-// Clase para manejar los eventos de respuesta del asistente (simula la parte de streaming)
-class EventHandler {
-  constructor(senderId) {
-    this.senderId = senderId;
-  }
-
-  // Maneja el texto generado por el asistente
-  on_text_created(text) {
-    console.log(`Respuesta del asistente: ${text}`);
-  }
-
-  // Maneja los cambios en el texto generado por el asistente (streaming)
-  on_text_delta(delta) {
-    console.log(delta.value);  // Imprime los cambios del texto
-  }
-
-  // Enviar un mensaje cuando la respuesta está lista
-  on_done() {
-    sendMessage(this.senderId, '¡Gracias por esperar! Estoy aquí para ayudarte.');
   }
 }
 
