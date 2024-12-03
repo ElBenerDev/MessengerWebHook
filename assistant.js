@@ -1,5 +1,4 @@
-import { OpenAI, AssistantEventHandler } from 'openai';
-import { override } from 'typing-extensions';
+import { OpenAI } from 'openai';
 
 // Configuramos el cliente de OpenAI
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -9,26 +8,10 @@ const assistantId = process.env.ASSISTANT_ID;
 const thread = await client.beta.threads.create();
 console.log('Hilo creado:', thread);
 
-// Manejador de eventos para manejar la respuesta del asistente
-class EventHandler extends AssistantEventHandler {
-  @override
-  on_text_created(text) {
-    // Este evento se dispara cuando se crea texto en el flujo
-    return text.value; // Retornamos el texto generado
-  }
-
-  @override
-  on_text_delta(delta, snapshot) {
-    // Este evento se dispara cuando el texto cambia o se agrega en el flujo
-    return delta.value; // Retornamos el texto parcial generado
-  }
-}
-
 // Función para manejar los mensajes del usuario
 export async function handleUserMessage(userMessage) {
   try {
     const responseChunks = [];
-    const eventHandler = new EventHandler();
 
     // Enviar el mensaje del usuario al asistente
     await client.beta.threads.messages.create({
@@ -42,10 +25,9 @@ export async function handleUserMessage(userMessage) {
       {
         thread_id: thread.id,
         assistant_id: assistantId,
-        event_handler: eventHandler,
       },
       {
-        onData: (data) => responseChunks.push(data),
+        onData: (data) => responseChunks.push(data.value), // Capturamos el contenido del texto
       }
     );
 
