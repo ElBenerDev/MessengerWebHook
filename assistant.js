@@ -14,7 +14,7 @@ const rl = readline.createInterface({
 
 async function continueConversation(userMessage) {
   try {
-    // Crear un hilo para la conversación (si aún no existe uno)
+    // Crear un hilo para la conversación
     const thread = await openai.beta.threads.create({});
     console.log("Hilo creado:", thread.id);
 
@@ -33,14 +33,18 @@ async function continueConversation(userMessage) {
 
     console.log("Respuesta del asistente:", assistantResponse);
 
-    // Aquí extraemos correctamente el texto del asistente
-    const assistantMessage = assistantResponse.content[0]?.text?.content;
-
-    if (assistantMessage) {
-      console.log("Texto de la respuesta del asistente:", assistantMessage);
-      return assistantMessage;  // Retornamos solo el texto
+    // Inspeccionar la estructura completa de la respuesta
+    if (assistantResponse.content && assistantResponse.content.length > 0) {
+      const responseText = assistantResponse.content[0]?.text;
+      if (responseText) {
+        console.log("Texto de la respuesta del asistente (inspeccionado):", responseText);
+        return responseText.content || responseText;  // Acceder al contenido correctamente
+      } else {
+        console.log("El campo 'text' no contiene un texto válido.");
+        return null;
+      }
     } else {
-      console.log("El asistente no respondió con un texto válido.");
+      console.log("No se encontró contenido en la respuesta del asistente.");
       return null;
     }
   } catch (error) {
