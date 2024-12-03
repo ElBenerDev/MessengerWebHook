@@ -1,39 +1,48 @@
 import { OpenAI } from 'openai';
+import axios from 'axios';
 
-// Configura el cliente de OpenAI
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const assistantId = 'asst_Q3M9vDA4aN89qQNH1tDXhjaE'; // ID del asistente
+// Configurando el cliente de OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
-// Función para manejar el mensaje del usuario y obtener respuesta
-export async function handleUserMessage(userMessage) {
+// Función para enviar mensaje a Messenger
+export async function sendMessageToMessenger(recipientId, message) {
+  const pageAccessToken = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+  const pageId = process.env.PAGE_ID;
+
+  const url = `https://graph.facebook.com/v12.0/${pageId}/messages?access_token=${pageAccessToken}`;
+
+  const data = {
+    recipient: {
+      id: recipientId
+    },
+    message: {
+      text: message
+    }
+  };
+
   try {
-    // Crear un hilo para la conversación
-    const thread = await client.beta.threads.create();
+    const response = await axios.post(url, data);
+    console.log("Mensaje enviado:", response.data);
+  } catch (error) {
+    console.error("Error al enviar mensaje a Messenger:", error.response ? error.response.data : error.message);
+  }
+}
 
-    // Enviar el mensaje del usuario con el 'role' correcto
-    await client.beta.threads.messages.create({
-      thread_id: thread.id,
-      role: 'user',  // Especificar que el mensaje es del usuario
-      content: userMessage,
+// Función para obtener la respuesta del asistente de OpenAI
+export async function getAssistantResponse(userMessage) {
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4', // O el modelo que prefieras
+      messages: [
+        { role: 'user', content: userMessage }
+      ]
     });
 
-    // Capturar la respuesta del asistente
-    let assistantResponse = '';
-    await client.beta.threads.runs.stream(
-      {
-        thread_id: thread.id,
-        assistant_id: assistantId,
-      },
-      {
-        onData: (data) => {
-          assistantResponse += data.value; // Acumulamos la respuesta
-        },
-      }
-    );
-
-    return assistantResponse.trim();  // Retornamos la respuesta procesada
+    const assistantMessage = completion.choices[0].message.content;
+    return assistantMessage;
   } catch (error) {
-    console.error('Error en handleUserMessage:', error.message);
-    throw new Error('No se pudo procesar el mensaje.');
+    throw new Error("Error al interactuar con OpenAI: " + error.message);
   }
 }
