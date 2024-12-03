@@ -2,7 +2,6 @@ import 'dotenv/config';  // Usamos import para dotenv
 import express from 'express';
 import axios from 'axios';
 import { OpenAI } from 'openai';  // Usar import para OpenAI
-import { AssistantEventHandler } from 'openai';  // Usar import para AssistantEventHandler
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -78,37 +77,18 @@ app.post('/webhook', async (req, res) => {
 
     // Si se recibe un mensaje, procesamos la respuesta con el asistente de OpenAI
     try {
-      // Usamos el método streaming de OpenAI para obtener una respuesta en tiempo real
-      class EventHandler extends AssistantEventHandler {
-        onTextCreated(text) {
-          console.log(`Asistente: ${text.value}`);
-        }
-
-        onTextDelta(delta) {
-          console.log(delta.value);
-        }
-      }
-
-      const eventHandler = new EventHandler();
-
-      // Enviar el mensaje del usuario al hilo de OpenAI
-      await client.beta.threads.messages.create({
-        thread_id: thread.id,
-        role: 'user',
-        content: receivedMessage,
+      // Usamos el método de chat tradicional de OpenAI para obtener una respuesta
+      const completion = await client.chat.completions.create({
+        model: 'gpt-4', // O el modelo que prefieras
+        messages: [
+          { role: 'user', content: receivedMessage }
+        ]
       });
 
-      // Crear y manejar la respuesta del asistente en tiempo real
-      const stream = client.beta.threads.runs.stream({
-        thread_id: thread.id,
-        assistant_id: 'asst_Q3M9vDA4aN89qQNH1tDXhjaE', // ID del asistente
-        event_handler: eventHandler,
-      });
-
-      await stream.until_done();
+      const assistantMessage = completion.choices[0].message.content;
+      console.log("Respuesta del asistente:", assistantMessage);
 
       // Enviar la respuesta generada del asistente a Messenger
-      const assistantMessage = stream.messages.join(" ");  // Tomamos las respuestas generadas
       await sendMessageToMessenger(senderId, assistantMessage);
 
     } catch (error) {
