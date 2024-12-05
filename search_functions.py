@@ -18,6 +18,13 @@ def build_search_data(filters):
         "currency": filters.get("currency", "ANY"),
         "filters": filters.get("additional_filters", []),
     }
+    
+    # Incluir filtros avanzados dependiendo de la operación (alquiler o venta)
+    if filters.get("operation_types") == [1]:  # Venta
+        search_data["filters"].append(["price_from", ">", "0"])  # Asegurarse de que haya un precio
+    elif filters.get("operation_types") == [2]:  # Alquiler
+        search_data["filters"].append(["is_rentable", "=", "true"])  # Asegurarse de que sea una propiedad en alquiler
+    
     return search_data
 
 def search_properties(filters):
@@ -76,15 +83,16 @@ def show_results(filters, results):
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    # Filtros de ejemplo
+    # Filtros de ejemplo para venta o alquiler
     filtros = {
         "localization_id": 1234,  # ID de localización (ejemplo)
         "localization_type": "city",  # Tipo de localización
         "price_from": 100000,
         "price_to": 500000,
-        "operation_types": [2],  # 1: Venta, 2: Alquiler, 3: Alquiler temporal
+        "operation_types": [1],  # 1: Venta, 2: Alquiler, 3: Alquiler temporal
         "property_types": [3],  # 3: Casa
         "currency": "USD",
+        "additional_filters": [["bathroom_amount", ">", 2]],  # Ejemplo de filtro adicional (más de 2 baños)
     }
 
     # Buscar propiedades
