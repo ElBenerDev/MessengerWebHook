@@ -1,7 +1,6 @@
 import dotenv from 'dotenv';
 import express from 'express';
-import { sendMessageToMessenger } from '../assistant.js'; // Importamos la función para enviar mensajes
-import { getAssistantResponse } from '../assistant.js'; // Importamos la función para interactuar con OpenAI
+import axios from 'axios';
 
 // Cargar las variables de entorno desde .env
 dotenv.config();
@@ -33,7 +32,7 @@ app.get('/webhook', (req, res) => {
 // Webhook para recibir mensajes
 app.post('/webhook', async (req, res) => {
   const messagingEvents = req.body.entry[0].messaging;
-  
+
   for (let i = 0; i < messagingEvents.length; i++) {
     const event = messagingEvents[i];
     const senderId = event.sender.id;
@@ -42,8 +41,12 @@ app.post('/webhook', async (req, res) => {
     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
 
     try {
-      // Llamamos a la función para obtener la respuesta del asistente
-      const assistantMessage = await getAssistantResponse(receivedMessage);
+      // Llamamos al servidor Python para obtener la respuesta del asistente
+      const response = await axios.post('http://localhost:5000/generate-response', {
+        message: receivedMessage
+      });
+
+      const assistantMessage = response.data.response;
 
       // Enviar la respuesta generada al usuario en Messenger
       await sendMessageToMessenger(senderId, assistantMessage);
