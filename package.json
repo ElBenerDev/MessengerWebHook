@@ -2,6 +2,7 @@
   "name": "project-root",
   "version": "1.0.0",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "concurrently \"node index.js\" \"python assistant.py\""
   },
@@ -10,5 +11,6 @@
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "concurrently": "^7.6.0"
-  }
+  },
+  "license": "UNLICENSED"
 }
