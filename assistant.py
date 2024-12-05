@@ -58,10 +58,13 @@ def generate_response():
         # Formatear los resultados para enviarlos al usuario
         response_message = "Aquí tienes algunas propiedades disponibles:\n"
         for property in properties:
+            # Obtener el tipo de operación
+            operation_type = "Alquiler" if "Rent" in [op["operation_type"] for op in property["operations"]] else "Venta"
             response_message += f"- **{property.get('title', 'Sin título')}**\n"
-            response_message += f"  Precio: {property.get('price', 'No disponible')}\n"
+            response_message += f"  Precio: {property.get('operations', [{}])[0].get('prices', [{}])[0].get('price', 'No disponible')} ARS\n"
             response_message += f"  Ubicación: {property.get('fake_address', 'No especificada')}\n"
-            response_message += f"  Descripción: {property.get('description', 'No disponible')}\n\n"
+            response_message += f"  Descripción: {property.get('description', 'No disponible')}\n"
+            response_message += f"  Tipo de operación: {operation_type}\n\n"
 
         return jsonify({'response': response_message})
 

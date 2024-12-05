@@ -11,9 +11,9 @@ def extract_filters(user_message):
     filters = {
         "price_from": 0,
         "price_to": 999999999,
-        "operation_types": [],
+        "operation_types": [],  # Para filtrar por 'Rent' o 'Sale'
         "property_types": [],
-        "currency": "ANY",
+        "currency": "ARS",
         "additional_filters": []
     }
     
@@ -52,7 +52,17 @@ def search_properties(filters):
         response.raise_for_status()  # Lanza excepción si hay error HTTP
         properties = response.json()
         print("Resultados obtenidos correctamente.")
-        return properties.get("objects", [])
+        
+        # Filtrar propiedades por tipo de operación (alquiler o venta)
+        filtered_properties = []
+        for property in properties.get("objects", []):
+            for operation in property.get("operations", []):
+                if operation["operation_type"] == "Rent" and 2 in filters["operation_types"]:
+                    filtered_properties.append(property)
+                elif operation["operation_type"] == "Sale" and 1 in filters["operation_types"]:
+                    filtered_properties.append(property)
+        
+        return filtered_properties
     except requests.exceptions.RequestException as req_err:
         print(f"Error en la solicitud a la API de Tokko: {req_err}")
         return []
