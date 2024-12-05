@@ -1,0 +1,28 @@
+{
+    "name": "messenger-webhook",
+    "version": "1.0.0",
+    "description": "Bot para interactuar con Messenger y OpenAI",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+      "start": "node index.js",
+      "start:prod": "NODE_ENV=production node index.js"
+    },
+    "dependencies": {
+      "axios": "^1.7.9",
+      "dotenv": "^10.0.0",
+      "express": "^4.21.1",
+      "openai": "^4.75.0"
+    },
+    "devDependencies": {
+      "@types/dotenv": "^6.1.1"
+    },
+    "author": "Tu Nombre",
+    "license": "ISC",
+    "keywords": [
+      "messenger",
+      "bot",
+      "express",
+      "openai"
+    ]
+  }
