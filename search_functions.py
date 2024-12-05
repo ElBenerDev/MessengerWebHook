@@ -2,26 +2,23 @@ import requests
 
 # Función para procesar el mensaje del usuario y extraer filtros
 def extract_filters(user_message):
-    # Filtros predeterminados
     filters = {
         "price_from": 0,
-        "price_to": 4500000,  # Rango de precios predeterminado
+        "price_to": 999999999,  # Rango amplio por defecto
         "operation_types": [],  # 1: Venta, 2: Alquiler, 3: Alquiler temporal
-        "property_types": [],  # Tipos de propiedad (ejemplo: 2: Departamento, 3: Casa)
-        "currency": "USD",  # Moneda predeterminada
-        "current_localization_type": "country",  # Tipo de localización (por defecto: país)
-        "current_localization_id": [1],  # ID de país (por defecto: Argentina)
-        "filters": [],  # Filtros avanzados
-        "with_tags": [],  # Tags específicos
-        "without_tags": [],  # Tags excluidos
-        "with_custom_tags": [],
-        "without_custom_tags": []
+        "property_types": [],  # Tipos de propiedad
+        "currency": "ANY",  # Moneda por defecto
+        "current_localization_type": "country",  # Nivel de localización
+        "current_localization_id": [0],  # ID de país (global por defecto)
+        "filters": [],
+        "with_tags": [],
+        "without_tags": []
     }
 
-    # Detectar intención (venta, alquiler, compra)
+    # Detectar intención de operación
     if "alquiler" in user_message.lower():
         filters["operation_types"] = [2]  # Alquiler
-    elif "comprar" in user_message.lower() or "venta" in user_message.lower():
+    elif "venta" in user_message.lower() or "comprar" in user_message.lower():
         filters["operation_types"] = [1]  # Venta
     elif "alquiler temporal" in user_message.lower():
         filters["operation_types"] = [3]  # Alquiler temporal
@@ -33,7 +30,6 @@ def extract_filters(user_message):
             filters["price_to"] = price_to
         except ValueError:
             pass
-
     if "más de" in user_message.lower():
         try:
             price_from = int(user_message.split("más de")[1].split()[0].replace(",", "").replace(".", ""))
@@ -49,66 +45,59 @@ def extract_filters(user_message):
     if "oficina" in user_message.lower():
         filters["property_types"].append(5)  # Oficina
 
-    # Detectar ubicación
-    if "en" in user_message.lower():
-        try:
-            location = user_message.split("en")[1].strip().split()[0]
-            filters["current_localization_id"] = [location]  # Agregar la ubicación detectada
-            filters["current_localization_type"] = "division"  # Cambiar el tipo de localización
-        except IndexError:
-            pass
-
-    # Agregar filtros avanzados (ejemplo: baños, gastos)
-    filters["filters"] = [["expenses", "<", "400"], ["bathroom_amount", ">", "2"]]
-
-    # Agregar tags específicos (si aplica)
-    filters["with_tags"] = [34, 40]  # Ejemplo: Jacuzzi, Solarium
-    filters["without_tags"] = [47]  # Ejemplo: Excluir propiedades en construcción
-
     return filters
 
-# Función para realizar la búsqueda avanzada de propiedades en la API de Tokko
+# Función para realizar la búsqueda avanzada
 def search_properties(filters):
-    # URL base del endpoint de búsqueda
-    tokko_url = "https://www.tokkobroker.com/api/v1/property/search?key=34430fc661d5b961de6fd53a9382f7a232de3ef0"
+    # URL del endpoint de búsqueda
+    base_url = "https://www.tokkobroker.com/api/v1/property/search"
+    api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
+    tokko_url = f"{base_url}?key={api_key}"
 
-    # Construir el cuerpo de la solicitud
-    search_data = {
-        "current_localization_id": filters["current_localization_id"],
-        "current_localization_type": filters["current_localization_type"],
-        "price_from": filters["price_from"],
-        "price_to": filters["price_to"],
-        "operation_types": filters["operation_types"],
-        "property_types": filters["property_types"],
-        "currency": filters["currency"],
-        "filters": filters["filters"],
-        "with_tags": filters["with_tags"],
-        "without_tags": filters["without_tags"],
-        "with_custom_tags": filters["with_custom_tags"],
-        "without_custom_tags": filters["without_custom_tags"]
-    }
-
+    # Solicitud POST con los filtros
     try:
-        # Realizar la solicitud POST a la API de Tokko con los filtros
-        response = requests.post(tokko_url, json=search_data)
-        response.raise_for_status()  # Lanza una excepción si la respuesta tiene un error HTTP
-
-        # Procesar la respuesta JSON
+        response = requests.post(tokk_url, json=filters)
+        response.raise_for_status()
         properties = response.json()
+
+        # Procesar resultados
         results = []
-
-        # Extraer información relevante de las propiedades
-        for property in properties.get('objects', []):
+        for property in properties.get("objects", []):
             results.append({
-                'title': property.get('title', 'Sin título'),
-                'price': property.get('price', 'No especificado'),
-                'location': property.get('location', {}).get('address', 'Ubicación no disponible'),
-                'description': property.get('description', 'Sin descripción'),
+                "title": property.get("title", "Sin título"),
+                "price": property.get("price", "No especificado"),
+                "operation": "Venta" if property.get("operation_type") == 1 else "Alquiler",
+                "location": property.get("location", {}).get("address", "Ubicación no disponible"),
+                "description": property.get("description", "Sin descripción"),
             })
-
         return results
 
     except requests.exceptions.RequestException as e:
-        # Manejar errores de conexión o respuesta
         print(f"Error al conectarse a la API de Tokko: {e}")
-        return None
+        return []
+
+# Función para mostrar resultados al usuario
+def show_results(filters, results):
+    operation_map = {1: "venta", 2: "alquiler", 3: "alquiler temporal"}
+    operation_type = operation_map.get(filters["operation_types"][0], "operación desconocida")
+    
+    print(f"Resultados para {operation_type}:")
+    print(f"Rango de precios: {filters['price_from']} - {filters['price_to']} {filters['currency']}")
+    print(f"Tipo de propiedad: {', '.join(str(pt) for pt in filters['property_types']) or 'cualquier tipo'}")
+    print(f"Ubicación: {filters['current_localization_type']} ID {filters['current_localization_id'][0]}")
+
+    if not results:
+        print("No se encontraron propiedades que cumplan con estos criterios.")
+    else:
+        for property in results:
+            print(f"\nTítulo: {property['title']}")
+            print(f"Precio: {property['price']}")
+            print(f"Operación: {property['operation']}")
+            print(f"Ubicación: {property['location']}")
+            print(f"Descripción: {property['description']}")
+
+# Ejemplo de uso
+mensaje_usuario = "Quiero alquilar un departamento de menos de 2000 dólares en Caballito"
+filtros = extract_filters(mensaje_usuario)
+resultados = search_properties(filtros)
+show_results(filtros, resultados)
