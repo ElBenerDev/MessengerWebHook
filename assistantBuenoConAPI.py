@@ -43,8 +43,7 @@ def extract_filters(user_message):
         "operation_types": [],  # 1: Venta, 2: Alquiler, 3: Alquiler temporal
         "property_types": [],  # Tipos de propiedad (ejemplo: 2: Departamento)
         "currency": "USD",  # Moneda predeterminada
-        "current_localization_type": "division",  # Tipo de localización (por defecto: división)
-        "current_localization_id": [],  # IDs de localización
+        "location": None,  # Ubicación
     }
 
     # Detectar intención (venta, alquiler, compra)
@@ -81,8 +80,8 @@ def extract_filters(user_message):
     # Detectar ubicación
     if "en" in user_message.lower():
         try:
-            location = user_message.split("en")[1].strip().split()[0]
-            filters["current_localization_id"].append(location)  # Agregar la ubicación detectada
+            location = user_message.split("en")[1].split()[0]
+            filters["location"] = location
         except IndexError:
             pass
 
@@ -93,20 +92,9 @@ def search_properties(filters):
     # URL base del endpoint de búsqueda
     tokko_url = "https://www.tokkobroker.com/api/v1/property/search?key=34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
-    # Construir el cuerpo de la solicitud
-    data = {
-        "price_from": filters["price_from"],
-        "price_to": filters["price_to"],
-        "operation_types": filters["operation_types"],
-        "property_types": filters["property_types"],
-        "currency": filters["currency"],
-        "current_localization_type": filters["current_localization_type"],
-        "current_localization_id": filters["current_localization_id"],
-    }
-
     try:
         # Realizar la solicitud POST a la API de Tokko con los filtros
-        response = requests.post(tokko_url, json=data)
+        response = requests.post(tokko_url, json=filters)
         response.raise_for_status()  # Lanza una excepción si la respuesta tiene un error HTTP
 
         # Procesar la respuesta JSON
