@@ -59,6 +59,13 @@ app.post('/webhook', async (req, res) => {
   res.sendStatus(200); // Confirmamos la recepción del mensaje
 });
 
+// Define la función sendMessageToMessenger
+async function sendMessageToMessenger(recipientId, message) {
+    // Implementa la lógica para enviar un mensaje a través de la API de Messenger
+    console.log(`Enviando mensaje a ${recipientId}: ${message}`);
+    // Aquí deberías implementar la llamada a la API de Messenger
+}
+
 // Iniciamos el servidor
 app.listen(port, () => {
   console.log(`Servidor escuchando en puerto ${port}`);
