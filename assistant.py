@@ -3,7 +3,7 @@ from openai import OpenAI
 from openai import AssistantEventHandler
 from typing_extensions import override
 import os
-import requests  # Para realizar solicitudes HTTP
+from search_functions import extract_filters, search_properties  # Importar las funciones de búsqueda
 
 app = Flask(__name__)
 
@@ -33,119 +33,6 @@ class EventHandler(AssistantEventHandler):
         # Este evento se dispara cuando el texto cambia o se agrega en el flujo
         print(delta.value, end="", flush=True)
         self.assistant_message += delta.value  # Agregar el texto al mensaje final
-
-# Función para procesar el mensaje del usuario y extraer filtros
-def extract_filters(user_message):
-    # Filtros predeterminados
-    filters = {
-        "price_from": 0,
-        "price_to": 4500000,  # Rango de precios predeterminado
-        "operation_types": [],  # 1: Venta, 2: Alquiler, 3: Alquiler temporal
-        "property_types": [],  # Tipos de propiedad (ejemplo: 2: Departamento, 3: Casa)
-        "currency": "USD",  # Moneda predeterminada
-        "current_localization_type": "country",  # Tipo de localización (por defecto: país)
-        "current_localization_id": [1],  # ID de país (por defecto: Argentina)
-        "filters": [],  # Filtros avanzados
-        "with_tags": [],  # Tags específicos
-        "without_tags": [],  # Tags excluidos
-        "with_custom_tags": [],
-        "without_custom_tags": []
-    }
-
-    # Detectar intención (venta, alquiler, compra)
-    if "alquiler" in user_message.lower():
-        filters["operation_types"] = [2]  # Alquiler
-    elif "comprar" in user_message.lower() or "venta" in user_message.lower():
-        filters["operation_types"] = [1]  # Venta
-    elif "alquiler temporal" in user_message.lower():
-        filters["operation_types"] = [3]  # Alquiler temporal
-
-    # Detectar rango de precios
-    if "menos de" in user_message.lower():
-        try:
-            price_to = int(user_message.split("menos de")[1].split()[0].replace(",", "").replace(".", ""))
-            filters["price_to"] = price_to
-        except ValueError:
-            pass
-
-    if "más de" in user_message.lower():
-        try:
-            price_from = int(user_message.split("más de")[1].split()[0].replace(",", "").replace(".", ""))
-            filters["price_from"] = price_from
-        except ValueError:
-            pass
-
-    # Detectar tipo de propiedad
-    if "departamento" in user_message.lower():
-        filters["property_types"].append(2)  # Departamento
-    if "casa" in user_message.lower():
-        filters["property_types"].append(3)  # Casa
-    if "oficina" in user_message.lower():
-        filters["property_types"].append(5)  # Oficina
-
-    # Detectar ubicación
-    if "en" in user_message.lower():
-        try:
-            location = user_message.split("en")[1].strip().split()[0]
-            filters["current_localization_id"] = [location]  # Agregar la ubicación detectada
-            filters["current_localization_type"] = "division"  # Cambiar el tipo de localización
-        except IndexError:
-            pass
-
-    # Agregar filtros avanzados (ejemplo: baños, gastos)
-    filters["filters"] = [["expenses", "<", "400"], ["bathroom_amount", ">", "2"]]
-
-    # Agregar tags específicos (si aplica)
-    filters["with_tags"] = [34, 40]  # Ejemplo: Jacuzzi, Solarium
-    filters["without_tags"] = [47]  # Ejemplo: Excluir propiedades en construcción
-
-    return filters
-
-# Función para realizar la búsqueda avanzada de propiedades en la API de Tokko
-def search_properties(filters):
-    # URL base del endpoint de búsqueda
-    tokko_url = "https://www.tokkobroker.com/api/v1/property/search?key=34430fc661d5b961de6fd53a9382f7a232de3ef0"
-
-    # Construir el cuerpo de la solicitud
-    search_data = {
-        "current_localization_id": filters["current_localization_id"],
-        "current_localization_type": filters["current_localization_type"],
-        "price_from": filters["price_from"],
-        "price_to": filters["price_to"],
-        "operation_types": filters["operation_types"],
-        "property_types": filters["property_types"],
-        "currency": filters["currency"],
-        "filters": filters["filters"],
-        "with_tags": filters["with_tags"],
-        "without_tags": filters["without_tags"],
-        "with_custom_tags": filters["with_custom_tags"],
-        "without_custom_tags": filters["without_custom_tags"]
-    }
-
-    try:
-        # Realizar la solicitud POST a la API de Tokko con los filtros
-        response = requests.post(tokko_url, json=search_data)
-        response.raise_for_status()  # Lanza una excepción si la respuesta tiene un error HTTP
-
-        # Procesar la respuesta JSON
-        properties = response.json()
-        results = []
-
-        # Extraer información relevante de las propiedades
-        for property in properties.get('objects', []):
-            results.append({
-                'title': property.get('title', 'Sin título'),
-                'price': property.get('price', 'No especificado'),
-                'location': property.get('location', {}).get('address', 'Ubicación no disponible'),
-                'description': property.get('description', 'Sin descripción'),
-            })
-
-        return results
-
-    except requests.exceptions.RequestException as e:
-        # Manejar errores de conexión o respuesta
-        print(f"Error al conectarse a la API de Tokko: {e}")
-        return None
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
