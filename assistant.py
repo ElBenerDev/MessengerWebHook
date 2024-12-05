@@ -15,6 +15,7 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")  # Cam
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
+        super().__init__()  # Inicializar correctamente la clase base
         self.assistant_message = ""  # Almacena el mensaje generado por el asistente
 
     @override
