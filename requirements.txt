@@ -1,5 +1,4 @@
 flask
 openai
-txt
 requests
 typing-extensions
