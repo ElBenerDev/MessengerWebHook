@@ -39,12 +39,17 @@ def extract_filters(user_message):
     # Filtros predeterminados
     filters = {
         "price_from": 0,
-        "price_to": 1000000,  # Rango de precios predeterminado
+        "price_to": 4500000,  # Rango de precios predeterminado
         "operation_types": [],  # 1: Venta, 2: Alquiler, 3: Alquiler temporal
-        "property_types": [],  # Tipos de propiedad (ejemplo: 2: Departamento)
+        "property_types": [],  # Tipos de propiedad (ejemplo: 2: Departamento, 3: Casa)
         "currency": "USD",  # Moneda predeterminada
-        "current_localization_type": "division",  # Tipo de localización (por defecto: división)
-        "current_localization_id": [],  # IDs de localización
+        "current_localization_type": "country",  # Tipo de localización (por defecto: país)
+        "current_localization_id": [1],  # ID de país (por defecto: Argentina)
+        "filters": [],  # Filtros avanzados
+        "with_tags": [],  # Tags específicos
+        "without_tags": [],  # Tags excluidos
+        "with_custom_tags": [],
+        "without_custom_tags": []
     }
 
     # Detectar intención (venta, alquiler, compra)
@@ -82,9 +87,17 @@ def extract_filters(user_message):
     if "en" in user_message.lower():
         try:
             location = user_message.split("en")[1].strip().split()[0]
-            filters["current_localization_id"].append(location)  # Agregar la ubicación detectada
+            filters["current_localization_id"] = [location]  # Agregar la ubicación detectada
+            filters["current_localization_type"] = "division"  # Cambiar el tipo de localización
         except IndexError:
             pass
+
+    # Agregar filtros avanzados (ejemplo: baños, gastos)
+    filters["filters"] = [["expenses", "<", "400"], ["bathroom_amount", ">", "2"]]
+
+    # Agregar tags específicos (si aplica)
+    filters["with_tags"] = [34, 40]  # Ejemplo: Jacuzzi, Solarium
+    filters["without_tags"] = [47]  # Ejemplo: Excluir propiedades en construcción
 
     return filters
 
@@ -94,19 +107,24 @@ def search_properties(filters):
     tokko_url = "https://www.tokkobroker.com/api/v1/property/search?key=34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
     # Construir el cuerpo de la solicitud
-    data = {
+    search_data = {
+        "current_localization_id": filters["current_localization_id"],
+        "current_localization_type": filters["current_localization_type"],
         "price_from": filters["price_from"],
         "price_to": filters["price_to"],
         "operation_types": filters["operation_types"],
         "property_types": filters["property_types"],
         "currency": filters["currency"],
-        "current_localization_type": filters["current_localization_type"],
-        "current_localization_id": filters["current_localization_id"],
+        "filters": filters["filters"],
+        "with_tags": filters["with_tags"],
+        "without_tags": filters["without_tags"],
+        "with_custom_tags": filters["with_custom_tags"],
+        "without_custom_tags": filters["without_custom_tags"]
     }
 
     try:
         # Realizar la solicitud POST a la API de Tokko con los filtros
-        response = requests.post(tokko_url, json=data)
+        response = requests.post(tokko_url, json=search_data)
         response.raise_for_status()  # Lanza una excepción si la respuesta tiene un error HTTP
 
         # Procesar la respuesta JSON
