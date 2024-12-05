@@ -56,7 +56,7 @@ def search_properties(filters):
 
     # Solicitud POST con los filtros
     try:
-        response = requests.post(tokk_url, json=filters)
+        response = requests.post(tokko_url, json=filters)
         response.raise_for_status()
         properties = response.json()
 
