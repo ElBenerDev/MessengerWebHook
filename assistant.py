@@ -52,16 +52,16 @@ def generate_response():
         # Realizar la búsqueda de propiedades
         properties = search_properties(filters)
 
-        if properties is None:
+        if not properties:
             return jsonify({'response': "No se pudo realizar la búsqueda de propiedades en este momento."}), 500
 
         # Formatear los resultados para enviarlos al usuario
         response_message = "Aquí tienes algunas propiedades disponibles:\n"
         for property in properties:
-            response_message += f"- **{property['title']}**\n"
-            response_message += f"  Precio: {property['price']}\n"
-            response_message += f"  Ubicación: {property['location']}\n"
-            response_message += f"  Descripción: {property['description']}\n\n"
+            response_message += f"- **{property.get('title', 'Sin título')}**\n"
+            response_message += f"  Precio: {property.get('price', 'No disponible')}\n"
+            response_message += f"  Ubicación: {property.get('fake_address', 'No especificada')}\n"
+            response_message += f"  Descripción: {property.get('description', 'No disponible')}\n\n"
 
         return jsonify({'response': response_message})
 

@@ -4,102 +4,55 @@ import requests
 TOKKO_API_URL = "https://www.tokkobroker.com/api/v1/property/"
 API_KEY = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
-def build_search_data(filters):
+def extract_filters(user_message):
     """
-    Construye los datos de búsqueda basados en los filtros proporcionados.
+    Función para extraer los filtros del mensaje del usuario.
     """
-    search_data = {
-        "current_localization_id": filters.get("localization_id", 0),
-        "current_localization_type": filters.get("localization_type", "country"),
-        "price_from": filters.get("price_from", 0),
-        "price_to": filters.get("price_to", 999999999),
-        "operation_types": filters.get("operation_types", []),
-        "property_types": filters.get("property_types", []),
-        "currency": filters.get("currency", "ANY"),
-        "filters": filters.get("additional_filters", []),
+    filters = {
+        "price_from": 0,
+        "price_to": 999999999,
+        "operation_types": [],
+        "property_types": [],
+        "currency": "ANY",
+        "additional_filters": []
     }
     
-    # Incluir filtros avanzados dependiendo de la operación (alquiler o venta)
-    if filters.get("operation_types") == [1]:  # Venta
-        search_data["filters"].append(["price_from", ">", "0"])  # Asegurarse de que haya un precio
-    elif filters.get("operation_types") == [2]:  # Alquiler
-        search_data["filters"].append(["is_rentable", "=", "true"])  # Asegurarse de que sea una propiedad en alquiler
+    # Si el mensaje menciona 'comprar' o 'alquilar', establecer el tipo de operación
+    if "alquilar" in user_message.lower():
+        filters["operation_types"].append(2)  # 2: Alquiler
+    elif "comprar" in user_message.lower():
+        filters["operation_types"].append(1)  # 1: Venta
     
-    return search_data
+    # Buscar precios en el mensaje
+    if "precio desde" in user_message.lower():
+        filters["price_from"] = 100000  # Solo un ejemplo, deberías extraer el precio real
+    
+    if "precio hasta" in user_message.lower():
+        filters["price_to"] = 500000  # Solo un ejemplo, deberías extraer el precio real
+    
+    return filters
 
 def search_properties(filters):
     """
     Realiza la búsqueda de propiedades en la API de Tokko.
     """
-    search_data = build_search_data(filters)
-    
-    # Verificar que al menos un tipo de operación esté definido
-    if not search_data["operation_types"]:
-        print("Error: No se definió ningún tipo de operación en los filtros.")
-        return []
-
-    # Verificar que la localización tenga datos válidos
-    if search_data["current_localization_id"] == 0:
-        print("Advertencia: No se especificó una localización válida. Usando predeterminada (país).")
+    search_data = {
+        "operation_types": filters["operation_types"],
+        "price_from": filters["price_from"],
+        "price_to": filters["price_to"],
+        "currency": filters["currency"],
+    }
     
     # Construir la URL con la clave de API
     url = f"{TOKKO_API_URL}search/?key={API_KEY}"
 
-    # Realizar la solicitud a la API
     try:
         print("Enviando datos a la API:", search_data)
         response = requests.post(url, json=search_data)
         response.raise_for_status()  # Lanza excepción si hay error HTTP
         properties = response.json()
         print("Resultados obtenidos correctamente.")
-        return properties
-    except requests.exceptions.HTTPError as http_err:
-        print(f"Error HTTP al conectarse a la API de Tokko: {http_err}")
+        return properties.get("objects", [])
     except requests.exceptions.RequestException as req_err:
         print(f"Error en la solicitud a la API de Tokko: {req_err}")
-    except KeyError as key_err:
-        print(f"Error al procesar los datos de la respuesta: {key_err}")
-    return []
-
-def show_results(filters, results):
-    """
-    Muestra los resultados en base a los filtros y los datos obtenidos.
-    """
-    operation_map = {1: "venta", 2: "alquiler", 3: "alquiler temporal"}
-    
-    # Manejar casos donde el filtro esté vacío
-    if filters.get("operation_types"):
-        operation_type = operation_map.get(filters["operation_types"][0], "operación desconocida")
-    else:
-        operation_type = "operación desconocida"
-
-    print(f"Mostrando resultados para la operación: {operation_type}")
-    for property in results.get("objects", []):
-        print(f"Título: {property.get('publication_title', 'Sin título')}")
-        print(f"Precio: {property.get('price', 'No disponible')}")
-        print(f"Dirección: {property.get('fake_address', 'No especificada')}")
-        print(f"Superficie total: {property.get('total_surface', 'No especificada')}")
-        print("-" * 40)
-
-# Ejemplo de uso
-if __name__ == "__main__":
-    # Filtros de ejemplo para venta o alquiler
-    filtros = {
-        "localization_id": 1234,  # ID de localización (ejemplo)
-        "localization_type": "city",  # Tipo de localización
-        "price_from": 100000,
-        "price_to": 500000,
-        "operation_types": [1],  # 1: Venta, 2: Alquiler, 3: Alquiler temporal
-        "property_types": [3],  # 3: Casa
-        "currency": "USD",
-        "additional_filters": [["bathroom_amount", ">", 2]],  # Ejemplo de filtro adicional (más de 2 baños)
-    }
-
-    # Buscar propiedades
-    resultados = search_properties(filtros)
-
-    # Mostrar resultados
-    if resultados:
-        show_results(filtros, resultados)
-    else:
-        print("No se encontraron resultados.")
+        return []
