@@ -5,9 +5,9 @@ import axios from 'axios';
 // Cargar las variables de entorno desde .env
 dotenv.config();
 
-// Inicializamos la app de Express
 const app = express();
 const port = process.env.PORT || 3000;
+const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5000';
 
 app.use(express.json());
 
@@ -41,14 +41,11 @@ app.post('/webhook', async (req, res) => {
     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
 
     try {
-      // Llamamos al servidor Python para obtener la respuesta del asistente
-      const response = await axios.post('http://localhost:5000/generate-response', {
+      const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
         message: receivedMessage
       });
 
       const assistantMessage = response.data.response;
-
-      // Enviar la respuesta generada al usuario en Messenger
       await sendMessageToMessenger(senderId, assistantMessage);
     } catch (error) {
       console.error("Error al interactuar con OpenAI:", error);
@@ -56,12 +53,11 @@ app.post('/webhook', async (req, res) => {
     }
   }
 
-  res.sendStatus(200); // Confirmamos la recepción del mensaje
+  res.sendStatus(200);
 });
 
 // Define la función sendMessageToMessenger
 async function sendMessageToMessenger(recipientId, message) {
-    // Implementa la lógica para enviar un mensaje a través de la API de Messenger
     console.log(`Enviando mensaje a ${recipientId}: ${message}`);
     // Aquí deberías implementar la llamada a la API de Messenger
 }

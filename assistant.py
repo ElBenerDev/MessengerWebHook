@@ -12,7 +12,6 @@ def generate_response():
     data = request.json
     user_message = data.get('message')
 
-    # Llamada a la API de OpenAI para generar una respuesta
     try:
         response = openai.Completion.create(
             engine="text-davinci-003",
