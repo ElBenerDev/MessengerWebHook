@@ -6,8 +6,8 @@ import axios from 'axios';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 3000;
-const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5000';
+const port = process.env.PORT || 10000; // Render expone el puerto 10000
+const pythonServiceUrl = 'http://localhost:5000'; // Usar localhost para el servicio Python
 
 app.use(express.json());
 
