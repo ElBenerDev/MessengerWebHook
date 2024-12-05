@@ -13,7 +13,7 @@ app.use(express.json());
 
 // Webhook de verificación de Messenger
 app.get('/webhook', (req, res) => {
-  const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN; // Cambiado a FACEBOOK_VERIFY_TOKEN
+  const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
@@ -58,29 +58,8 @@ app.post('/webhook', async (req, res) => {
 
 // Define la función sendMessageToMessenger
 async function sendMessageToMessenger(recipientId, message) {
-  const PAGE_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN; // Cambiado a FACEBOOK_PAGE_ACCESS_TOKEN
-
-  if (!PAGE_ACCESS_TOKEN) {
-    console.error("FACEBOOK_PAGE_ACCESS_TOKEN no está configurado en las variables de entorno.");
-    return;
-  }
-
-  const url = `https://graph.facebook.com/v12.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
-
-  const payload = {
-    recipient: { id: recipientId },
-    message: { text: message },
-  };
-
-  try {
-    const response = await axios.post(url, payload, {
-      headers: { 'Content-Type': 'application/json' },
-    });
-    console.log(`Mensaje enviado a ${recipientId}: ${message}`);
-    console.log("Respuesta de Messenger:", response.data);
-  } catch (error) {
-    console.error("Error al enviar mensaje a Messenger:", error.response?.data || error.message);
-  }
+    console.log(`Enviando mensaje a ${recipientId}: ${message}`);
+    // Aquí deberías implementar la llamada a la API de Messenger
 }
 
 // Iniciamos el servidor
