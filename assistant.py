@@ -1,85 +1,86 @@
 from flask import Flask, request, jsonify
-from openai import OpenAI
-from openai import AssistantEventHandler
-from typing_extensions import override
-import os
 import requests
-import json
+import os
 
 app = Flask(__name__)
 
-# Configura tu cliente con la API key desde el entorno
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# Variable para almacenar los threads
+threads = {}
 
-# ID del asistente (debe configurarse como variable de entorno o directamente aquí)
-assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.json
+    if data and 'entry' in data:
+        for entry in data['entry']:
+            changes = entry.get('changes', [])
+            for change in changes:
+                value = change.get('value', {})
+                if 'messages' in value:
+                    messages = value['messages']
+                    for message in messages:
+                        if message.get('type') == 'text':
+                            sender_id = message['from']
+                            message_body = message['text']['body']
+                            phone_number_id = value['metadata']['phone_number_id']
+                            print(f"[0] Mensaje recibido de {sender_id}: {message_body}")
 
-# Diccionario en memoria para asociar usuarios con sus threads
-user_threads = {}
+                            # Procesar el mensaje con el servicio de respuesta
+                            try:
+                                response = requests.post(
+                                    f"{os.getenv('PYTHON_SERVICE_URL')}/generate-response",
+                                    json={
+                                        'user_id': sender_id,
+                                        'message': message_body
+                                    }
+                                )
+                                if response.status_code == 200:
+                                    assistant_message = response.json().get('response', "No se pudo generar una respuesta.")
+                                else:
+                                    assistant_message = "Error al obtener la respuesta del servicio."
 
-# Crear un manejador de eventos para manejar el stream de respuestas del asistente
-class EventHandler(AssistantEventHandler):
-    def __init__(self):
-        super().__init__()
-        self.assistant_message = ""
+                                # Enviar mensaje de respuesta a WhatsApp
+                                send_message(sender_id, assistant_message, phone_number_id)
 
-    @override
-    def on_text_created(self, text) -> None:
-        print(f"Asistente: {text.value}", end="", flush=True)
-        self.assistant_message += text.value
+                            except Exception as e:
+                                print(f"[0] Error al interactuar con el servicio Python: {e}")
+                                send_message(sender_id, "Lo siento, hubo un problema al procesar tu mensaje.", phone_number_id)
+                        else:
+                            print(f"[0] El mensaje no es de tipo 'text' o tiene un formato no compatible: {message}")
 
-    @override
-    def on_text_delta(self, delta, snapshot):
-        print(delta.value, end="", flush=True)
-        self.assistant_message += delta.value
+    return jsonify({'status': 'success'}), 200
+
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
     data = request.json
     user_id = data.get('user_id')
-    user_message = data.get('message')
+    message = data.get('message')
 
-    if not user_message or not user_id:
-        return jsonify({'response': "No se proporcionaron datos válidos."}), 400
+    if not user_id or not message:
+        return jsonify({'error': 'Faltan datos obligatorios: user_id o message'}), 400
 
-    try:
-        thread_id = user_threads.get(user_id)
+    # Manejo de hilos
+    thread = threads.get(user_id)
+    if not thread:
+        thread = {'messages': []}
+        threads[user_id] = thread
 
-        if not thread_id:
-            thread = client.beta.threads.create()
-            thread_id = thread.id
-            user_threads[user_id] = thread_id
-            print(f"Nuevo hilo creado para el usuario {user_id}: {thread_id}")
+    thread['messages'].append({'role': 'user', 'content': message})
 
-        client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
+    # Simulación de respuesta generada por un asistente (para prueba)
+    assistant_response = f"Hola, procesé tu mensaje: {message}"
 
-        event_handler = EventHandler()
-        with client.beta.threads.runs.stream(
-            thread_id=thread_id,
-            assistant_id=assistant_id,
-            event_handler=event_handler,
-        ) as stream:
-            stream.until_done()
+    # Guardar la respuesta del asistente
+    thread['messages'].append({'role': 'assistant', 'content': assistant_response})
 
-        assistant_message = event_handler.assistant_message
+    return jsonify({'response': assistant_response}), 200
 
-        if not assistant_message:
-            raise ValueError("El asistente no generó un mensaje.")
 
-    except Exception as e:
-        return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
-
-    return jsonify({'response': assistant_message})
-
-def send_message_to_whatsapp(sender_id, message, phone_number_id):
-    url = f'https://graph.facebook.com/v15.0/{phone_number_id}/messages'
+def send_message(recipient_id, message, phone_number_id):
+    url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
     payload = {
         "messaging_product": "whatsapp",
-        "to": sender_id,
+        "to": recipient_id,
         "text": {"body": message}
     }
     headers = {
@@ -89,55 +90,10 @@ def send_message_to_whatsapp(sender_id, message, phone_number_id):
 
     response = requests.post(url, json=payload, headers=headers)
     if response.status_code == 200:
-        print(f"Mensaje enviado a {sender_id}: {message}")
+        print(f"[0] Mensaje enviado a {recipient_id}: {message}")
     else:
-        print(f"Error al enviar mensaje a {sender_id}: {response.text}")
+        print(f"[0] Error al enviar mensaje a {recipient_id}: {response.text}")
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    data = request.json
-    print(f"Datos recibidos en webhook: {json.dumps(data, indent=2)}")
-
-    if 'entry' in data:
-        for entry in data['entry']:
-            changes = entry.get('changes', [])
-            for change in changes:
-                value = change.get('value', {})
-
-                if value.get('statuses'):
-                    print(f"Ignorando evento de estado: {json.dumps(value['statuses'], indent=2)}")
-                    continue
-
-                if 'messages' in value and isinstance(value['messages'], list):
-                    message = value['messages'][0]
-                    if message.get('type') == 'text':
-                        sender_id = message['from']
-                        received_message = message['text']['body']
-                        print(f"Mensaje recibido de {sender_id}: {received_message}")
-
-                        try:
-                            response = requests.post(
-                                f'{os.getenv("PYTHON_SERVICE_URL")}/generate-response',
-                                json={'user_id': sender_id, 'message': received_message}
-                            )
-
-                            if response.status_code == 200:
-                                assistant_message = response.json().get('response', "No se pudo generar una respuesta.")
-                            else:
-                                assistant_message = "Error en el servicio de respuesta."
-
-                            send_message_to_whatsapp(sender_id, assistant_message, value['metadata']['phone_number_id'])
-
-                        except Exception as e:
-                            print(f"Error al interactuar con el servicio Python: {e}")
-                            send_message_to_whatsapp(sender_id, "Lo siento, hubo un problema al procesar tu mensaje.", value['metadata']['phone_number_id'])
-
-                    else:
-                        print(f"Mensaje no compatible: {json.dumps(message, indent=2)}")
-                else:
-                    print(f"Estructura de mensaje no válida: {json.dumps(value, indent=2)}")
-
-    return jsonify({'status': 'success'})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
