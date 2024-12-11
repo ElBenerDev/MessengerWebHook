@@ -12,7 +12,7 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ID del asistente (debe configurarse como variable de entorno o directamente aquí)
-assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")  # Cambia esto si es necesario
+assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
 # Diccionario en memoria para asociar usuarios con sus threads
 user_threads = {}
@@ -20,54 +20,50 @@ user_threads = {}
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
-        super().__init__()  # Inicializar correctamente la clase base
-        self.assistant_message = ""  # Almacena el mensaje generado por el asistente
+        super().__init__()
+        self.assistant_message = ""
 
     @override
     def on_text_created(self, text) -> None:
         print(f"Asistente: {text.value}", end="", flush=True)
-        self.assistant_message += text.value  # Agregar el texto al mensaje final
+        self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
         print(delta.value, end="", flush=True)
-        self.assistant_message += delta.value  # Agregar el texto al mensaje final
+        self.assistant_message += delta.value
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
     data = request.json
-    user_id = data.get('user_id')  # Identificador único del usuario
+    user_id = data.get('user_id')
     user_message = data.get('message')
 
     if not user_message or not user_id:
         return jsonify({'response': "No se proporcionaron datos válidos."}), 400
 
     try:
-        # Obtener el thread existente para el usuario o crear uno nuevo
         thread_id = user_threads.get(user_id)
 
         if not thread_id:
-            # Crear un nuevo thread si no existe uno asociado al usuario
             thread = client.beta.threads.create()
             thread_id = thread.id
             user_threads[user_id] = thread_id
             print(f"Nuevo hilo creado para el usuario {user_id}: {thread_id}")
 
-        # Enviar el mensaje del usuario al hilo
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message
         )
 
-        # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=thread_id,
             assistant_id=assistant_id,
             event_handler=event_handler,
         ) as stream:
-            stream.until_done()  # Esperar a que el flujo termine
+            stream.until_done()
 
         assistant_message = event_handler.assistant_message
 
@@ -108,12 +104,10 @@ def webhook():
             for change in changes:
                 value = change.get('value', {})
 
-                # Filtrar eventos de estado: 'sent', 'delivered', 'read'
                 if value.get('statuses'):
-                    print(f"Evento de estado recibido: {json.dumps(value['statuses'], indent=2)}")
-                    continue  # Ignorar eventos de estado
+                    print(f"Ignorando evento de estado: {json.dumps(value['statuses'], indent=2)}")
+                    continue
 
-                # Verificar que el mensaje sea de tipo 'text'
                 if 'messages' in value and isinstance(value['messages'], list):
                     message = value['messages'][0]
                     if message.get('type') == 'text':
@@ -122,16 +116,16 @@ def webhook():
                         print(f"Mensaje recibido de {sender_id}: {received_message}")
 
                         try:
-                            # Realizar la llamada al endpoint de Python para obtener la respuesta
                             response = requests.post(
                                 f'{os.getenv("PYTHON_SERVICE_URL")}/generate-response',
                                 json={'user_id': sender_id, 'message': received_message}
                             )
 
-                            # Asegurarse de que la respuesta sea válida
-                            assistant_message = response.json().get('response', "No se pudo generar una respuesta.")
+                            if response.status_code == 200:
+                                assistant_message = response.json().get('response', "No se pudo generar una respuesta.")
+                            else:
+                                assistant_message = "Error en el servicio de respuesta."
 
-                            # Aquí debes llamar a la función para enviar el mensaje de vuelta a WhatsApp
                             send_message_to_whatsapp(sender_id, assistant_message, value['metadata']['phone_number_id'])
 
                         except Exception as e:
@@ -139,9 +133,9 @@ def webhook():
                             send_message_to_whatsapp(sender_id, "Lo siento, hubo un problema al procesar tu mensaje.", value['metadata']['phone_number_id'])
 
                     else:
-                        print(f"El mensaje no es de tipo 'text': {json.dumps(message, indent=2)}")
+                        print(f"Mensaje no compatible: {json.dumps(message, indent=2)}")
                 else:
-                    print(f"El campo 'messages' no está presente o no es un array: {json.dumps(value, indent=2)}")
+                    print(f"Estructura de mensaje no válida: {json.dumps(value, indent=2)}")
 
     return jsonify({'status': 'success'})
 
