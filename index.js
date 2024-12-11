@@ -40,11 +40,6 @@ app.post('/webhook', async (req, res) => {
   }
 
   for (const entry of req.body.entry) {
-    if (!entry.changes || !Array.isArray(entry.changes)) {
-      console.error("El campo 'changes' no está presente o no es un array:", JSON.stringify(entry, null, 2));
-      continue;
-    }
-
     for (const change of entry.changes) {
       const value = change.value;
       if (
@@ -62,6 +57,7 @@ app.post('/webhook', async (req, res) => {
         try {
           const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
             message: receivedMessage,
+            user_id: senderId,
           });
 
           const assistantMessage = response.data.response;
