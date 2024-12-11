@@ -40,6 +40,11 @@ app.post('/webhook', async (req, res) => {
   }
 
   for (const entry of req.body.entry) {
+    if (!entry.changes || !Array.isArray(entry.changes)) {
+      console.error("El campo 'changes' no está presente o no es un array:", JSON.stringify(entry, null, 2));
+      continue;
+    }
+
     for (const change of entry.changes) {
       const value = change.value;
       if (
@@ -55,12 +60,14 @@ app.post('/webhook', async (req, res) => {
         console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
 
         try {
+          // Llamada al servicio Python (sin modificaciones extras)
           const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
-            message: receivedMessage,
-            user_id: senderId,
+            message: receivedMessage, // Se envía únicamente el mensaje original
           });
 
           const assistantMessage = response.data.response;
+
+          // Enviar respuesta a WhatsApp
           await sendMessageToWhatsApp(senderId, assistantMessage, value.metadata.phone_number_id);
         } catch (error) {
           console.error("Error al interactuar con el servicio Python:", error.message);
