@@ -100,6 +100,24 @@ def send_message_to_whatsapp(sender_id, message, phone_number_id):
         print(f"Error al enviar mensaje a {sender_id}: {str(e)}")
         return None
 
+@app.route('/generate-response', methods=['POST'])
+def generate_response():
+    try:
+        data = request.json
+        if not data or 'message' not in data:
+            return jsonify({'error': 'No message provided'}), 400
+
+        message = data['message']
+        # Usar un ID único para el usuario basado en la timestamp
+        user_id = str(int(time.time()))
+
+        response_data = generate_response_internal(message, user_id)
+        return jsonify(response_data)
+
+    except Exception as e:
+        print(f"Error en generate_response: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
