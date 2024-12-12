@@ -58,21 +58,35 @@ def generate_response_internal(message, user_id):
             content=message
         )
 
-        # Crear y manejar la respuesta del asistente
-        event_handler = EventHandler()
+        # Crear un run
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=assistant_id
         )
 
-        with client.beta.threads.runs.stream(
-            thread_id=thread_id,
-            run_id=run.id,
-            event_handler=event_handler,
-        ) as stream:
-            stream.until_done()
+        # Esperar a que el run se complete
+        while True:
+            run_status = client.beta.threads.runs.retrieve(
+                thread_id=thread_id,
+                run_id=run.id
+            )
+            if run_status.status == 'completed':
+                break
+            elif run_status.status == 'failed':
+                return {'response': "Lo siento, hubo un error al procesar tu mensaje."}
+            time.sleep(1)
 
-        return {'response': event_handler.assistant_message}
+        # Obtener los mensajes
+        messages = client.beta.threads.messages.list(
+            thread_id=thread_id
+        )
+
+        # Obtener la última respuesta del asistente
+        for message in messages.data:
+            if message.role == "assistant":
+                return {'response': message.content[0].text.value}
+
+        return {'response': "No se pudo obtener una respuesta del asistente."}
 
     except Exception as e:
         print(f"Error en generate_response_internal: {str(e)}")
