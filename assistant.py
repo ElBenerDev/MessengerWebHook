@@ -88,7 +88,7 @@ class EventHandler(AssistantEventHandler):
 def generate_response_internal(message, user_id):
     """Función interna para generar respuestas sin hacer llamadas HTTP"""
     if not message or not user_id:
-        return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
+        raise ValueError("No se proporcionó un mensaje o un ID de usuario válido.")
 
     try:
         # Obtener el thread existente o crear uno nuevo
@@ -109,7 +109,9 @@ def generate_response_internal(message, user_id):
         )
 
         # Esperar la respuesta
-        while True:
+        max_retries = 10
+        retry_count = 0
+        while retry_count < max_retries:
             run_status = client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
                 run_id=run.id
@@ -117,8 +119,12 @@ def generate_response_internal(message, user_id):
             if run_status.status == 'completed':
                 break
             elif run_status.status == 'failed':
-                return {'response': "Lo siento, hubo un error al procesar tu mensaje."}
-            time.sleep(0.5)
+                raise Exception("La ejecución del asistente falló")
+            time.sleep(1)
+            retry_count += 1
+
+        if retry_count >= max_retries:
+            raise Exception("Tiempo de espera agotado")
 
         # Obtener los mensajes más recientes
         messages = client.beta.threads.messages.list(
@@ -128,7 +134,7 @@ def generate_response_internal(message, user_id):
         )
 
         if not messages.data:
-            return {'response': "No se pudo obtener una respuesta."}
+            raise Exception("No se recibió respuesta del asistente")
 
         assistant_message = messages.data[0].content[0].text.value
 
@@ -136,22 +142,26 @@ def generate_response_internal(message, user_id):
 
     except Exception as e:
         print(f"Error en generate_response_internal: {str(e)}")
-        return {'response': f"Error al generar respuesta: {str(e)}"}
+        raise
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
-    data = request.json
-    user_message = data.get('message')
-    user_id = data.get('user_id')
-
-    if not user_message or not user_id:
-        return jsonify({'response': "No se proporcionó un mensaje o un ID de usuario válido."}), 400
-
     try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No se proporcionaron datos JSON'}), 400
+
+        user_message = data.get('message')
+        user_id = data.get('user_id')
+
+        if not user_message or not user_id:
+            return jsonify({'error': "No se proporcionó un mensaje o un ID de usuario válido."}), 400
+
         response_data = generate_response_internal(user_message, user_id)
         return jsonify(response_data)
     except Exception as e:
-        return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+        print(f"Error en generate_response: {str(e)}")
+        return jsonify({'error': f"Error al generar respuesta: {str(e)}"}), 500
 
 def send_message_to_whatsapp(sender_id, message, phone_number_id):
     url = f'https://graph.facebook.com/v15.0/{phone_number_id}/messages'
@@ -177,42 +187,54 @@ def send_message_to_whatsapp(sender_id, message, phone_number_id):
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    data = request.json
-    print(f"Datos recibidos en webhook: {json.dumps(data, indent=2)}")
+    try:
+        data = request.json
+        print(f"Datos recibidos en webhook: {json.dumps(data, indent=2)}")
 
-    if 'entry' in data:
-        for entry in data['entry']:
-            changes = entry.get('changes', [])
-            for change in changes:
-                value = change.get('value', {})
-                if value.get('statuses'):
-                    print(f"Evento de estado recibido: {json.dumps(value['statuses'], indent=2)}")
-                    continue
+        if 'entry' in data:
+            for entry in data['entry']:
+                changes = entry.get('changes', [])
+                for change in changes:
+                    value = change.get('value', {})
+                    if value.get('statuses'):
+                        print(f"Evento de estado recibido: {json.dumps(value['statuses'], indent=2)}")
+                        continue
 
-                if 'messages' in value and isinstance(value['messages'], list):
-                    message = value['messages'][0]
-                    if message.get('type') == 'text':
-                        sender_id = message['from']
-                        received_message = message['text']['body']
-                        print(f"Mensaje recibido de {sender_id}: {received_message}")
+                    if 'messages' in value and isinstance(value['messages'], list):
+                        message = value['messages'][0]
+                        if message.get('type') == 'text':
+                            sender_id = message['from']
+                            received_message = message['text']['body']
+                            print(f"Mensaje recibido de {sender_id}: {received_message}")
 
-                        try:
-                            response_data = generate_response_internal(received_message, sender_id)
-                            assistant_message = response_data.get('response', "No se pudo generar una respuesta.")
-                            send_message_to_whatsapp(sender_id, assistant_message, value['metadata']['phone_number_id'])
-                        except Exception as e:
-                            print(f"Error al procesar el mensaje: {e}")
-                            send_message_to_whatsapp(
-                                sender_id, 
-                                "Lo siento, hubo un problema al procesar tu mensaje.", 
-                                value['metadata']['phone_number_id']
-                            )
+                            try:
+                                response_data = generate_response_internal(received_message, sender_id)
+                                assistant_message = response_data.get('response', "No se pudo generar una respuesta.")
+                                if value.get('metadata', {}).get('phone_number_id'):
+                                    send_message_to_whatsapp(
+                                        sender_id, 
+                                        assistant_message, 
+                                        value['metadata']['phone_number_id']
+                                    )
+                                else:
+                                    print("Error: No se encontró phone_number_id en los metadatos")
+                            except Exception as e:
+                                print(f"Error al procesar el mensaje: {e}")
+                                if value.get('metadata', {}).get('phone_number_id'):
+                                    send_message_to_whatsapp(
+                                        sender_id, 
+                                        "Lo siento, hubo un problema al procesar tu mensaje.", 
+                                        value['metadata']['phone_number_id']
+                                    )
+                        else:
+                            print(f"El mensaje no es de tipo 'text': {json.dumps(message, indent=2)}")
                     else:
-                        print(f"El mensaje no es de tipo 'text': {json.dumps(message, indent=2)}")
-                else:
-                    print(f"El campo 'messages' no está presente o no es un array: {json.dumps(value, indent=2)}")
+                        print(f"El campo 'messages' no está presente o no es un array: {json.dumps(value, indent=2)}")
 
-    return jsonify({'status': 'success'})
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        print(f"Error en webhook: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/webhook', methods=['GET'])
 def verify_webhook():
