@@ -28,21 +28,6 @@ class ConversationManager:
 # Inicializar el manejador de conversaciones
 conversation_manager = ConversationManager()
 
-class EventHandler(AssistantEventHandler):
-    def __init__(self):
-        super().__init__()
-        self.assistant_message = ""
-
-    @override
-    def on_text_created(self, text) -> None:
-        print(f"Asistente: {text.value}", end="", flush=True)
-        self.assistant_message += text.value
-
-    @override
-    def on_text_delta(self, delta, snapshot):
-        print(delta.value, end="", flush=True)
-        self.assistant_message += delta.value
-
 def generate_response_internal(message, user_id):
     if not message or not user_id:
         return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
@@ -118,14 +103,13 @@ def send_message_to_whatsapp(sender_id, message, phone_number_id):
 def generate_response():
     try:
         data = request.json
-        if not data or 'message' not in data:
-            return jsonify({'error': 'No message provided'}), 400
+        if not data or 'message' not in data or 'sender_id' not in data:
+            return jsonify({'error': 'No message or sender_id provided'}), 400
 
         message = data['message']
-        # Usar un ID único para el usuario basado en la timestamp
-        user_id = str(int(time.time()))
+        sender_id = data['sender_id']
 
-        response_data = generate_response_internal(message, user_id)
+        response_data = generate_response_internal(message, sender_id)
         return jsonify(response_data)
 
     except Exception as e:
