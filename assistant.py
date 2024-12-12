@@ -60,9 +60,14 @@ def generate_response_internal(message, user_id):
 
         # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=assistant_id
+        )
+
         with client.beta.threads.runs.stream(
             thread_id=thread_id,
-            assistant_id=assistant_id,
+            run_id=run.id,
             event_handler=event_handler,
         ) as stream:
             stream.until_done()
@@ -81,7 +86,7 @@ def send_message_to_whatsapp(sender_id, message, phone_number_id):
         "text": {"body": message}
     }
     headers = {
-        "Authorization": f"Bearer {os.getenv('WHATSAPP_API_KEY')}",
+        "Authorization": f"Bearer {os.getenv('FACEBOOK_PAGE_ACCESS_TOKEN')}",
         "Content-Type": "application/json"
     }
 
@@ -146,7 +151,7 @@ def verify_webhook():
     challenge = request.args.get('hub.challenge')
 
     if mode and token:
-        if mode == 'subscribe' and token == os.getenv('WEBHOOK_VERIFY_TOKEN'):
+        if mode == 'subscribe' and token == os.getenv('FACEBOOK_VERIFY_TOKEN'):
             print("Webhook verificado!")
             return challenge
         else:
