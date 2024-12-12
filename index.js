@@ -108,6 +108,7 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     console.error("Error al interactuar con el servicio Python:", error.message);
     await sendMessageToWhatsApp(senderId, "Lo siento, hubo un problema al procesar tu mensaje.", value.metadata.phone_number_id);
 }
+}
 
 // Iniciar el servidor
 app.listen(port, () => {
