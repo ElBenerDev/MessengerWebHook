@@ -16,56 +16,14 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 class ConversationManager:
     def __init__(self):
         self.threads = {}
-        self.last_activity = {}
         print("ConversationManager inicializado")
 
     def get_thread_id(self, user_id):
-        try:
-            # Primero, buscar threads existentes con el metadata del usuario
-            if user_id in self.threads:
-                thread_id = self.threads[user_id]
-                try:
-                    # Verificar si el thread existe
-                    thread = client.beta.threads.retrieve(thread_id)
-                    if thread.metadata.get('user_id') == user_id:
-                        print(f"Reutilizando thread existente {thread_id} para usuario {user_id}")
-                        self.last_activity[user_id] = time.time()
-                        return thread_id
-                except Exception:
-                    # Si el thread no existe, eliminarlo del diccionario
-                    del self.threads[user_id]
-
-            # Si no se encontró un thread válido, crear uno nuevo
-            print(f"Creando nuevo thread para usuario {user_id}")
-            thread = client.beta.threads.create(
-                metadata={'user_id': user_id}
-            )
+        if user_id not in self.threads:
+            thread = client.beta.threads.create()
             self.threads[user_id] = thread.id
-            self.last_activity[user_id] = time.time()
-            return thread.id
-
-        except Exception as e:
-            print(f"Error en get_thread_id: {str(e)}")
-            # En caso de error, crear un nuevo thread
-            thread = client.beta.threads.create(
-                metadata={'user_id': user_id}
-            )
-            self.threads[user_id] = thread.id
-            self.last_activity[user_id] = time.time()
-            return thread.id
-
-    def cleanup_old_threads(self, max_age=3600):
-        current_time = time.time()
-        for user_id in list(self.threads.keys()):
-            if current_time - self.last_activity.get(user_id, 0) > max_age:
-                try:
-                    thread_id = self.threads[user_id]
-                    client.beta.threads.delete(thread_id)
-                except Exception:
-                    pass
-                finally:
-                    del self.threads[user_id]
-                    del self.last_activity[user_id]
+            print(f"Nuevo thread creado para usuario {user_id}: {thread.id}")
+        return self.threads[user_id]
 
 # Inicializar el manejador de conversaciones
 conversation_manager = ConversationManager()
@@ -86,82 +44,34 @@ class EventHandler(AssistantEventHandler):
         self.assistant_message += delta.value
 
 def generate_response_internal(message, user_id):
-    """Función interna para generar respuestas sin hacer llamadas HTTP"""
     if not message or not user_id:
-        raise ValueError("No se proporcionó un mensaje o un ID de usuario válido.")
+        return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
 
     try:
         # Obtener el thread existente o crear uno nuevo
         thread_id = conversation_manager.get_thread_id(user_id)
-        print(f"Usando thread {thread_id} para usuario {user_id}")
 
-        # Crear el mensaje en el thread
-        message_obj = client.beta.threads.messages.create(
+        # Enviar el mensaje del usuario al hilo
+        client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=message
         )
 
-        # Crear y ejecutar el run
-        run = client.beta.threads.runs.create(
+        # Crear y manejar la respuesta del asistente
+        event_handler = EventHandler()
+        with client.beta.threads.runs.stream(
             thread_id=thread_id,
-            assistant_id=assistant_id
-        )
+            assistant_id=assistant_id,
+            event_handler=event_handler,
+        ) as stream:
+            stream.until_done()
 
-        # Esperar la respuesta
-        max_retries = 10
-        retry_count = 0
-        while retry_count < max_retries:
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run.id
-            )
-            if run_status.status == 'completed':
-                break
-            elif run_status.status == 'failed':
-                raise Exception("La ejecución del asistente falló")
-            time.sleep(1)
-            retry_count += 1
-
-        if retry_count >= max_retries:
-            raise Exception("Tiempo de espera agotado")
-
-        # Obtener los mensajes más recientes
-        messages = client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=1
-        )
-
-        if not messages.data:
-            raise Exception("No se recibió respuesta del asistente")
-
-        assistant_message = messages.data[0].content[0].text.value
-
-        return {'response': assistant_message}
+        return {'response': event_handler.assistant_message}
 
     except Exception as e:
         print(f"Error en generate_response_internal: {str(e)}")
-        raise
-
-@app.route('/generate-response', methods=['POST'])
-def generate_response():
-    try:
-        data = request.json
-        if not data:
-            return jsonify({'error': 'No se proporcionaron datos JSON'}), 400
-
-        user_message = data.get('message')
-        user_id = data.get('user_id')
-
-        if not user_message or not user_id:
-            return jsonify({'error': "No se proporcionó un mensaje o un ID de usuario válido."}), 400
-
-        response_data = generate_response_internal(user_message, user_id)
-        return jsonify(response_data)
-    except Exception as e:
-        print(f"Error en generate_response: {str(e)}")
-        return jsonify({'error': f"Error al generar respuesta: {str(e)}"}), 500
+        return {'response': f"Error al generar respuesta: {str(e)}"}
 
 def send_message_to_whatsapp(sender_id, message, phone_number_id):
     url = f'https://graph.facebook.com/v15.0/{phone_number_id}/messages'
@@ -197,7 +107,6 @@ def webhook():
                 for change in changes:
                     value = change.get('value', {})
                     if value.get('statuses'):
-                        print(f"Evento de estado recibido: {json.dumps(value['statuses'], indent=2)}")
                         continue
 
                     if 'messages' in value and isinstance(value['messages'], list):
@@ -216,8 +125,6 @@ def webhook():
                                         assistant_message, 
                                         value['metadata']['phone_number_id']
                                     )
-                                else:
-                                    print("Error: No se encontró phone_number_id en los metadatos")
                             except Exception as e:
                                 print(f"Error al procesar el mensaje: {e}")
                                 if value.get('metadata', {}).get('phone_number_id'):
@@ -226,10 +133,6 @@ def webhook():
                                         "Lo siento, hubo un problema al procesar tu mensaje.", 
                                         value['metadata']['phone_number_id']
                                     )
-                        else:
-                            print(f"El mensaje no es de tipo 'text': {json.dumps(message, indent=2)}")
-                    else:
-                        print(f"El campo 'messages' no está presente o no es un array: {json.dumps(value, indent=2)}")
 
         return jsonify({'status': 'success'})
     except Exception as e:
