@@ -1,11 +1,18 @@
-require('dotenv').config();
-const express = require('express');
-const bodyParser = require('body-parser');
-const axios = require('axios');
+import express from 'express';
+import bodyParser from 'body-parser';
+import axios from 'axios';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 10000;
-const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5000';
+const port = process.env.PORT || 10000; // Render expone el puerto 10000
+const pythonServiceUrl = 'http://localhost:5000';
 
 app.use(bodyParser.json());
 
@@ -106,6 +113,6 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`Servidor escuchando en el puerto ${port}`);
+app.listen(3000, () => {
+    console.log('Servidor escuchando en el puerto 3000');
 });
