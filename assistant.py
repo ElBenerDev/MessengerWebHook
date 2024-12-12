@@ -5,95 +5,175 @@ from typing_extensions import override
 import os
 import requests
 import json
+import time
 
 app = Flask(__name__)
 
-# Configura tu cliente con la API key desde el entorno
+# Configuración inicial
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
-# ID del asistente (debe configurarse como variable de entorno o directamente aquí)
-assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")  # Cambia esto si es necesario
+class ConversationManager:
+    def __init__(self):
+        self.threads = {}
+        self.last_activity = {}
+        print("ConversationManager inicializado")
 
-# Crear un manejador de eventos para manejar el stream de respuestas del asistente
+    def get_thread_id(self, user_id):
+        try:
+            # Primero, buscar threads existentes con el metadata del usuario
+            if user_id in self.threads:
+                thread_id = self.threads[user_id]
+                try:
+                    # Verificar si el thread existe
+                    thread = client.beta.threads.retrieve(thread_id)
+                    if thread.metadata.get('user_id') == user_id:
+                        print(f"Reutilizando thread existente {thread_id} para usuario {user_id}")
+                        self.last_activity[user_id] = time.time()
+                        return thread_id
+                except Exception:
+                    # Si el thread no existe, eliminarlo del diccionario
+                    del self.threads[user_id]
+
+            # Si no se encontró un thread válido, crear uno nuevo
+            print(f"Creando nuevo thread para usuario {user_id}")
+            thread = client.beta.threads.create(
+                metadata={'user_id': user_id}
+            )
+            self.threads[user_id] = thread.id
+            self.last_activity[user_id] = time.time()
+            return thread.id
+
+        except Exception as e:
+            print(f"Error en get_thread_id: {str(e)}")
+            # En caso de error, crear un nuevo thread
+            thread = client.beta.threads.create(
+                metadata={'user_id': user_id}
+            )
+            self.threads[user_id] = thread.id
+            self.last_activity[user_id] = time.time()
+            return thread.id
+
+    def cleanup_old_threads(self, max_age=3600):
+        current_time = time.time()
+        for user_id in list(self.threads.keys()):
+            if current_time - self.last_activity.get(user_id, 0) > max_age:
+                try:
+                    thread_id = self.threads[user_id]
+                    client.beta.threads.delete(thread_id)
+                except Exception:
+                    pass
+                finally:
+                    del self.threads[user_id]
+                    del self.last_activity[user_id]
+
+# Inicializar el manejador de conversaciones
+conversation_manager = ConversationManager()
+
 class EventHandler(AssistantEventHandler):
     def __init__(self):
-        super().__init__()  # Inicializar correctamente la clase base
-        self.assistant_message = ""  # Almacena el mensaje generado por el asistente
+        super().__init__()
+        self.assistant_message = ""
 
     @override
     def on_text_created(self, text) -> None:
-        # Este evento se dispara cuando se crea texto en el flujo
         print(f"Asistente: {text.value}", end="", flush=True)
-        self.assistant_message += text.value  # Agregar el texto al mensaje final
+        self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
-        # Este evento se dispara cuando el texto cambia o se agrega en el flujo
         print(delta.value, end="", flush=True)
-        self.assistant_message += delta.value  # Agregar el texto al mensaje final
+        self.assistant_message += delta.value
+
+def generate_response_internal(message, user_id):
+    """Función interna para generar respuestas sin hacer llamadas HTTP"""
+    if not message or not user_id:
+        return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
+
+    try:
+        # Obtener el thread existente o crear uno nuevo
+        thread_id = conversation_manager.get_thread_id(user_id)
+        print(f"Usando thread {thread_id} para usuario {user_id}")
+
+        # Crear el mensaje en el thread
+        message_obj = client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=message
+        )
+
+        # Crear y ejecutar el run
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=assistant_id
+        )
+
+        # Esperar la respuesta
+        while True:
+            run_status = client.beta.threads.runs.retrieve(
+                thread_id=thread_id,
+                run_id=run.id
+            )
+            if run_status.status == 'completed':
+                break
+            elif run_status.status == 'failed':
+                return {'response': "Lo siento, hubo un error al procesar tu mensaje."}
+            time.sleep(0.5)
+
+        # Obtener los mensajes más recientes
+        messages = client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=1
+        )
+
+        if not messages.data:
+            return {'response': "No se pudo obtener una respuesta."}
+
+        assistant_message = messages.data[0].content[0].text.value
+
+        return {'response': assistant_message}
+
+    except Exception as e:
+        print(f"Error en generate_response_internal: {str(e)}")
+        return {'response': f"Error al generar respuesta: {str(e)}"}
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
     data = request.json
     user_message = data.get('message')
+    user_id = data.get('user_id')
 
-    if not user_message:
-        return jsonify({'response': "No se proporcionó un mensaje válido."}), 400
+    if not user_message or not user_id:
+        return jsonify({'response': "No se proporcionó un mensaje o un ID de usuario válido."}), 400
 
     try:
-        # Crear un nuevo hilo de conversación
-        thread = client.beta.threads.create()
-        print("Hilo creado:", thread)
-
-        # Verificar que el hilo se creó correctamente
-        if not thread or not hasattr(thread, "id"):
-            raise ValueError("No se pudo crear el hilo de conversación.")
-
-        # Enviar el mensaje del usuario al hilo
-        client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=user_message
-        )
-
-        # Crear y manejar la respuesta del asistente
-        event_handler = EventHandler()  # Instancia del manejador de eventos
-        with client.beta.threads.runs.stream(
-            thread_id=thread.id,
-            assistant_id=assistant_id,
-            event_handler=event_handler,
-        ) as stream:
-            stream.until_done()  # Esperar a que el flujo termine
-
-        # Obtener el mensaje generado por el asistente
-        assistant_message = event_handler.assistant_message
-
-        if not assistant_message:
-            raise ValueError("El asistente no generó un mensaje.")
-
+        response_data = generate_response_internal(user_message, user_id)
+        return jsonify(response_data)
     except Exception as e:
-        # Capturar cualquier error y devolverlo como respuesta
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
-
-    return jsonify({'response': assistant_message})
 
 def send_message_to_whatsapp(sender_id, message, phone_number_id):
     url = f'https://graph.facebook.com/v15.0/{phone_number_id}/messages'
     payload = {
         "messaging_product": "whatsapp",
         "to": sender_id,
-        "text": {"body": message}  # Asegúrate de que el mensaje es un texto
+        "text": {"body": message}
     }
     headers = {
         "Authorization": f"Bearer {os.getenv('WHATSAPP_API_KEY')}",
         "Content-Type": "application/json"
     }
 
-    response = requests.post(url, json=payload, headers=headers)
-    if response.status_code == 200:
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
         print(f"Mensaje enviado a {sender_id}: {message}")
-    else:
-        print(f"Error al enviar mensaje a {sender_id}: {response.text}")
+        print(f"Respuesta de WhatsApp: {response.json()}")
+        return response.json()
+    except Exception as e:
+        print(f"Error al enviar mensaje a {sender_id}: {str(e)}")
+        return None
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -105,13 +185,10 @@ def webhook():
             changes = entry.get('changes', [])
             for change in changes:
                 value = change.get('value', {})
-
-                # Filtrar eventos de estado: 'sent', 'delivered', 'read'
                 if value.get('statuses'):
                     print(f"Evento de estado recibido: {json.dumps(value['statuses'], indent=2)}")
-                    continue  # Ignorar eventos de estado
+                    continue
 
-                # Verificar que el mensaje sea de tipo 'text'
                 if 'messages' in value and isinstance(value['messages'], list):
                     message = value['messages'][0]
                     if message.get('type') == 'text':
@@ -120,30 +197,35 @@ def webhook():
                         print(f"Mensaje recibido de {sender_id}: {received_message}")
 
                         try:
-                            # Realizar la llamada al endpoint de Python para obtener la respuesta
-                            response = client.post(
-                                f'{os.getenv("PYTHON_SERVICE_URL")}/generate-response',
-                                json={'message': received_message}
-                            )
-
-                            # Asegurarse de que la respuesta sea válida
-                            assistant_message = response.json().get('response', "No se pudo generar una respuesta.")
-                            
-                            # Aquí debes llamar a la función para enviar el mensaje de vuelta a WhatsApp
+                            response_data = generate_response_internal(received_message, sender_id)
+                            assistant_message = response_data.get('response', "No se pudo generar una respuesta.")
                             send_message_to_whatsapp(sender_id, assistant_message, value['metadata']['phone_number_id'])
-
                         except Exception as e:
-                            print(f"Error al interactuar con el servicio Python: {e}")
-                            send_message_to_whatsapp(sender_id, "Lo siento, hubo un problema al procesar tu mensaje.", value['metadata']['phone_number_id'])
-
+                            print(f"Error al procesar el mensaje: {e}")
+                            send_message_to_whatsapp(
+                                sender_id, 
+                                "Lo siento, hubo un problema al procesar tu mensaje.", 
+                                value['metadata']['phone_number_id']
+                            )
                     else:
-                        # Si no es un mensaje de texto, imprimir el error
                         print(f"El mensaje no es de tipo 'text': {json.dumps(message, indent=2)}")
                 else:
                     print(f"El campo 'messages' no está presente o no es un array: {json.dumps(value, indent=2)}")
 
     return jsonify({'status': 'success'})
 
+@app.route('/webhook', methods=['GET'])
+def verify_webhook():
+    mode = request.args.get('hub.mode')
+    token = request.args.get('hub.verify_token')
+    challenge = request.args.get('hub.challenge')
+
+    if mode and token:
+        if mode == 'subscribe' and token == os.getenv('WEBHOOK_VERIFY_TOKEN'):
+            print("Webhook verificado!")
+            return challenge
+        else:
+            return 'Forbidden', 403
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-    
