@@ -97,17 +97,16 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
   };
 
   try {
-    const response = await axios.post(url, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-      },
+    const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
+        message: receivedMessage,
+        sender_id: senderId  // Añadimos el sender_id que necesita el servicio Python
     });
-    console.log(`Mensaje enviado a ${recipientId}: ${message}`);
-    console.log("Respuesta de WhatsApp:", response.data);
-  } catch (error) {
-    console.error("Error al enviar mensaje a WhatsApp:", error.response?.data || error.message);
-  }
+
+    const assistantMessage = response.data.response;
+    await sendMessageToWhatsApp(senderId, assistantMessage, value.metadata.phone_number_id);
+} catch (error) {
+    console.error("Error al interactuar con el servicio Python:", error.message);
+    await sendMessageToWhatsApp(senderId, "Lo siento, hubo un problema al procesar tu mensaje.", value.metadata.phone_number_id);
 }
 
 // Iniciar el servidor
