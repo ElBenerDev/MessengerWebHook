@@ -42,25 +42,41 @@ def wait_for_run(thread_id, run_id, max_wait_seconds=30):
             return False
         time.sleep(1)
 
+def format_property_response(properties):
+    if not properties:
+        return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
+
+    response = "Aquí tienes las propiedades disponibles:\n\n"
+    for prop in properties:
+        response += f"🏠 *{prop['title']}*\n"
+        response += f"💰 Precio: {prop['price']}\n"
+        response += f"📍 Ubicación: {prop['location']}\n"
+        response += f"📏 Superficie: {prop['surface']}\n"
+        response += f"🛏️ Ambientes: {prop['rooms']}\n"
+        response += f"🚿 Baños: {prop['bathrooms']}\n"
+        if prop['expenses'] > 0:
+            response += f"💵 Expensas: ${prop['expenses']}\n"
+        response += f"🔑 Operación: {prop['operation_type']}\n"
+        response += f"📝 Código: {prop['reference_code']}\n"
+        if prop['images']:
+            response += "🖼️ Imágenes disponibles\n"
+        response += "\n-------------------\n\n"
+
+    return response
+
 def generate_response_internal(message, user_id):
     if not message or not user_id:
         return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
 
     # Verificar si el mensaje solicita una búsqueda de propiedades
-    if "buscar propiedades" in message.lower() or "quiero alquilar" in message.lower() or "quiero comprar" in message.lower():
+    if any(keyword in message.lower() for keyword in ["buscar", "propiedades", "alquiler", "comprar", "venta"]):
         filters = extract_filters(message)
         properties = search_properties(filters)
 
         if properties is None:
             return {'response': "No se pudo realizar la búsqueda de propiedades en este momento."}
 
-        response_message = "Aquí tienes algunas propiedades disponibles:\n"
-        for property in properties:
-            response_message += f"- **{property['title']}**\n"
-            response_message += f"  Precio: {property['price']}\n"
-            response_message += f"  Ubicación: {property['location']}\n"
-            response_message += f"  Descripción: {property['description']}\n\n"
-
+        response_message = format_property_response(properties)
         return {'response': response_message}
 
     try:
@@ -73,7 +89,7 @@ def generate_response_internal(message, user_id):
                 if not wait_for_run(thread_id, run.id):
                     return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
 
-        # Ahora podemos crear el nuevo mensaje
+        # Crear el nuevo mensaje
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
