@@ -26,6 +26,22 @@ class ConversationManager:
 
 conversation_manager = ConversationManager()
 
+def wait_for_run(thread_id, run_id, max_wait_seconds=30):
+    start_time = time.time()
+    while True:
+        if time.time() - start_time > max_wait_seconds:
+            return False
+
+        run_status = client.beta.threads.runs.retrieve(
+            thread_id=thread_id,
+            run_id=run_id
+        )
+        if run_status.status == 'completed':
+            return True
+        elif run_status.status in ['failed', 'cancelled', 'expired']:
+            return False
+        time.sleep(1)
+
 def generate_response_internal(message, user_id):
     if not message or not user_id:
         return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
@@ -50,6 +66,14 @@ def generate_response_internal(message, user_id):
     try:
         thread_id = conversation_manager.get_thread_id(user_id)
 
+        # Verificar y esperar cualquier ejecución pendiente
+        runs = client.beta.threads.runs.list(thread_id=thread_id)
+        for run in runs.data:
+            if run.status not in ['completed', 'failed', 'cancelled', 'expired']:
+                if not wait_for_run(thread_id, run.id):
+                    return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
+
+        # Ahora podemos crear el nuevo mensaje
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
@@ -61,16 +85,8 @@ def generate_response_internal(message, user_id):
             assistant_id=assistant_id
         )
 
-        while True:
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run.id
-            )
-            if run_status.status == 'completed':
-                break
-            elif run_status.status == 'failed':
-                return {'response': "Lo siento, hubo un error al procesar tu mensaje."}
-            time.sleep(1)
+        if not wait_for_run(thread_id, run.id):
+            return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
 
         messages = client.beta.threads.messages.list(
             thread_id=thread_id
