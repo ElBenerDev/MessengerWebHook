@@ -91,11 +91,23 @@ def generate_response_internal(message, user_id):
 
                             # Añadir los resultados al thread
                             if properties_data:
-                                formatted_message = json.dumps(properties_data)
+                                properties_message = {
+                                    "properties": [
+                                        {
+                                            "title": prop['title'],
+                                            "price": prop['price'],
+                                            "details": f"- {prop['rooms']} ambientes\n- {prop['surface']} m²\n- {prop['condition']}\n- Expensas: ${prop['expenses']:,}" if prop['expenses'] else "",
+                                            "url": prop['url'],
+                                            "photo": prop['photos'][0] if prop['photos'] else None
+                                        }
+                                        for prop in properties_data
+                                    ]
+                                }
+
                                 client.beta.threads.messages.create(
                                     thread_id=thread_id,
                                     role="user",
-                                    content=formatted_message
+                                    content=json.dumps(properties_message)
                                 )
 
                                 # Crear nuevo run para procesar los resultados
@@ -136,18 +148,6 @@ def generate_response():
     except Exception as e:
         logger.error(f"Error en generate_response: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
-@app.route('/webhook', methods=['GET'])
-def verify_webhook():
-    mode = request.args.get('hub.mode')
-    token = request.args.get('hub.verify_token')
-    challenge = request.args.get('hub.challenge')
-
-    if mode and token:
-        if mode == 'subscribe' and token == os.getenv('FACEBOOK_VERIFY_TOKEN'):
-            return challenge
-        else:
-            return 'Forbidden', 403
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

@@ -7,11 +7,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def search_properties(filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Realiza la búsqueda de propiedades usando la API de Tokko
-    """
     base_url = "https://www.tokkobroker.com/api/v1/property/"
     api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
+
+    # Asegurarnos que solo busque propiedades activas y en alquiler
+    base_filters = {
+        "status": 2,  # Activa
+        "operation_types": [2],  # Solo alquiler
+        "limit": 10,
+        "order": "-created_at"
+    }
+
+    # Combinar los filtros base con los filtros específicos
+    filters.update(base_filters)
 
     try:
         response = requests.get(
@@ -26,38 +34,38 @@ def search_properties(filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         response.raise_for_status()
         data = response.json()
 
-        # Formatear los resultados para incluir solo la información relevante
         formatted_results = []
         for prop in data:
-            if prop.get('status') == 2 and not prop.get('deleted_at'):  # Solo propiedades activas
-                # Obtener el precio
-                price_info = ""
-                if prop.get('operations'):
-                    for op in prop['operations']:
-                        if op.get('prices'):
-                            price = op['prices'][0]
-                            price_info = f"{price.get('currency', '')} {price.get('price', '')}"
-                            break
+            # Verificar que la propiedad está activa y en alquiler
+            if (prop.get('status') == 2 and 
+                not prop.get('deleted_at') and 
+                any(op.get('operation_type') == 'Rent' for op in prop.get('operations', []))):
 
-                # Obtener la primera foto si existe
-                photo_url = ""
-                if prop.get('photos') and len(prop.get('photos')) > 0:
-                    photo_url = prop['photos'][0].get('thumb', '')
+                # Obtener el precio de alquiler
+                price_info = None
+                for op in prop.get('operations', []):
+                    if op.get('operation_type') == 'Rent':
+                        for price in op.get('prices', []):
+                            if price.get('currency') and price.get('price'):
+                                price_info = f"{price['currency']} {price['price']:,}"
+                                break
 
-                property_info = {
-                    'title': prop.get('publication_title'),
-                    'address': prop.get('fake_address'),
-                    'price': price_info,
-                    'details': prop.get('description_only', ''),
-                    'url': f"https://ficha.info/p/{prop.get('token')}",
-                    'photo': photo_url,
-                    'rooms': prop.get('room_amount'),
-                    'bathrooms': prop.get('bathroom_amount'),
-                    'surface': prop.get('total_surface'),
-                    'condition': prop.get('property_condition'),
-                    'expenses': prop.get('expenses')
-                }
-                formatted_results.append(property_info)
+                # Solo incluir si tiene precio de alquiler
+                if price_info:
+                    property_info = {
+                        'title': prop.get('publication_title'),
+                        'type': prop.get('type', {}).get('name'),
+                        'address': prop.get('fake_address'),
+                        'price': price_info,
+                        'rooms': prop.get('room_amount'),
+                        'bathrooms': prop.get('bathroom_amount'),
+                        'surface': prop.get('total_surface'),
+                        'expenses': prop.get('expenses'),
+                        'url': f"https://ficha.info/p/{prop.get('token')}",
+                        'condition': prop.get('property_condition'),
+                        'photos': [p.get('thumb') for p in prop.get('photos', [])[:1]] if prop.get('photos') else []
+                    }
+                    formatted_results.append(property_info)
 
         return formatted_results
 
@@ -66,23 +74,7 @@ def search_properties(filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
 def extract_filters(context: Dict) -> Dict[str, Any]:
-    """
-    Extrae los filtros de búsqueda del contexto
-    """
-    filters = {
-        "status": 2,
-        "limit": 20,
-        "offset": 0,
-        "order": "-created_at"
-    }
-
-    # Mapeo de tipos de operación
-    operation_types = {
-        'alquiler': [2],
-        'venta': [1]
-    }
-    if context.get('operation_type') in operation_types:
-        filters['operation_types'] = operation_types[context['operation_type']]
+    filters = {}
 
     # Mapeo de tipos de propiedad
     property_types = {
@@ -101,5 +93,11 @@ def extract_filters(context: Dict) -> Dict[str, Any]:
     # Cantidad de ambientes
     if context.get('rooms'):
         filters['room_amount'] = context['rooms']
+
+    # Rango de precios
+    if context.get('max_price'):
+        filters['max_price'] = context['max_price']
+    if context.get('min_price'):
+        filters['min_price'] = context['min_price']
 
     return filters
