@@ -7,65 +7,96 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def search_properties(filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    base_url = "https://www.tokkobroker.com/api/v1/property/"
+    """
+    Realiza la búsqueda de propiedades usando la API de Tokko
+    """
+    base_url = "https://www.tokkobroker.com/api/v1/property/search"
     api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
-    # Asegurarnos que solo busque propiedades activas y en alquiler
-    base_filters = {
-        "status": 2,  # Activa
+    # Construir el payload de búsqueda base
+    search_data = {
+        "current_localization_type": "division",
+        "current_localization_id": [25034],  # Villa Ballester
         "operation_types": [2],  # Solo alquiler
+        "property_types": filters.get('property_types', [2, 3, 13]),  # Por defecto: Departamentos, casas y PH
+        "currency": "ARS",
+        "price_from": filters.get('min_price', 0),
+        "price_to": filters.get('max_price', 1000000),
+        "filters": [
+            ["status", "=", 2],  # Propiedades activas
+            ["deleted_at", "=", None]  # No eliminadas
+        ],
         "limit": 10,
-        "order": "-created_at"
+        "offset": 0,
+        "order": "DESC",
+        "order_by": "created_at"
     }
 
-    # Combinar los filtros base con los filtros específicos
-    filters.update(base_filters)
+    # Agregar filtros específicos
+    if filters.get('room_amount'):
+        search_data['filters'].append(["room_amount", "=", filters['room_amount']])
+    if filters.get('bathroom_amount'):
+        search_data['filters'].append(["bathroom_amount", "=", filters['bathroom_amount']])
 
     try:
-        response = requests.get(
+        logger.info(f"Realizando búsqueda con filtros: {json.dumps(search_data, indent=2)}")
+
+        response = requests.post(
             base_url,
-            params={
-                'key': api_key,
-                **filters
-            },
+            params={'key': api_key},
+            json=search_data,
             headers={'Accept': 'application/json'}
         )
 
         response.raise_for_status()
         data = response.json()
 
+        logger.info(f"Resultados encontrados: {len(data.get('objects', []))}")
+
+        # Formatear los resultados
         formatted_results = []
-        for prop in data:
-            # Verificar que la propiedad está activa y en alquiler
-            if (prop.get('status') == 2 and 
-                not prop.get('deleted_at') and 
-                any(op.get('operation_type') == 'Rent' for op in prop.get('operations', []))):
+        for prop in data.get('objects', []):
+            # Obtener el precio de alquiler
+            price_info = None
+            for op in prop.get('operations', []):
+                if op.get('operation_type') == 'Rent':
+                    prices = op.get('prices', [])
+                    if prices:
+                        price = prices[0]
+                        if price.get('price'):
+                            price_info = f"ARS {price['price']:,}"
+                            break
 
-                # Obtener el precio de alquiler
-                price_info = None
-                for op in prop.get('operations', []):
-                    if op.get('operation_type') == 'Rent':
-                        for price in op.get('prices', []):
-                            if price.get('currency') and price.get('price'):
-                                price_info = f"{price['currency']} {price['price']:,}"
-                                break
+            if price_info:
+                # Obtener fotos con URLs limpias
+                photos = []
+                for photo in prop.get('photos', [])[:3]:  # Limitamos a 3 fotos
+                    photo_url = photo.get('image', '').split('?')[0]  # Eliminar parámetros de URL
+                    if photo_url:
+                        photos.append(photo_url)
 
-                # Solo incluir si tiene precio de alquiler
-                if price_info:
-                    property_info = {
-                        'title': prop.get('publication_title'),
-                        'type': prop.get('type', {}).get('name'),
-                        'address': prop.get('fake_address'),
-                        'price': price_info,
-                        'rooms': prop.get('room_amount'),
-                        'bathrooms': prop.get('bathroom_amount'),
-                        'surface': prop.get('total_surface'),
-                        'expenses': prop.get('expenses'),
-                        'url': f"https://ficha.info/p/{prop.get('token')}",
-                        'condition': prop.get('property_condition'),
-                        'photos': [p.get('thumb') for p in prop.get('photos', [])[:1]] if prop.get('photos') else []
-                    }
-                    formatted_results.append(property_info)
+                # Formatear detalles adicionales
+                details = []
+                if prop.get('room_amount'):
+                    details.append(f"{prop['room_amount']} ambientes")
+                if prop.get('bathroom_amount'):
+                    details.append(f"{prop['bathroom_amount']} baños")
+                if prop.get('total_surface'):
+                    details.append(f"{prop['total_surface']} m²")
+                if prop.get('expenses'):
+                    details.append(f"Expensas: ARS {prop['expenses']:,}")
+
+                property_info = {
+                    'title': prop.get('publication_title', '').strip(),
+                    'type': prop.get('type', {}).get('name', ''),
+                    'address': prop.get('fake_address', '').strip(),
+                    'price': price_info,
+                    'details': ' | '.join(details),
+                    'description': prop.get('description', '').strip(),
+                    'url': f"https://ficha.info/p/{prop.get('token')}",
+                    'photos': photos
+                }
+                formatted_results.append(property_info)
 
         return formatted_results
 
@@ -74,25 +105,29 @@ def search_properties(filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
 
 def extract_filters(context: Dict) -> Dict[str, Any]:
+    """
+    Extrae los filtros de búsqueda del contexto
+    """
     filters = {}
 
     # Mapeo de tipos de propiedad
-    property_types = {
+    property_types_map = {
         'departamento': [2],
         'casa': [3],
         'ph': [13],
         'local': [7]
     }
-    if context.get('property_type') in property_types:
-        filters['property_types'] = property_types[context['property_type']]
 
-    # Ubicación
-    if context.get('location'):
-        filters['location'] = context['location']
+    if context.get('property_type') in property_types_map:
+        filters['property_types'] = property_types_map[context['property_type']]
 
     # Cantidad de ambientes
     if context.get('rooms'):
         filters['room_amount'] = context['rooms']
+
+    # Cantidad de baños
+    if context.get('bathrooms'):
+        filters['bathroom_amount'] = context['bathrooms']
 
     # Rango de precios
     if context.get('max_price'):

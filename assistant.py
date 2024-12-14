@@ -42,6 +42,31 @@ def wait_for_run(thread_id, run_id, max_wait_seconds=30):
             return False
         time.sleep(1)
 
+def format_property_message(properties):
+    """
+    Formatea las propiedades para el mensaje del asistente
+    """
+    if not properties:
+        return "Lo siento, no encontré propiedades que coincidan con tus criterios de búsqueda."
+
+    message = "Encontré las siguientes propiedades que podrían interesarte:\n\n"
+    for i, prop in enumerate(properties, 1):
+        message += f"{i}. **{prop['title']}**\n"
+        message += f"   - **Precio**: {prop['price']}\n"
+        if prop['details']:
+            message += f"   - **Detalles**: {prop['details']}\n"
+        if prop['description']:
+            message += f"   - **Descripción**: {prop['description']}\n"
+        message += f"   - **[Ver más información]({prop['url']})**\n"
+        if prop['photos']:
+            message += "   - **Fotos**:\n"
+            for photo in prop['photos']:
+                message += f"     ![Foto]({photo})\n"
+        message += "\n"
+
+    message += "¿Te gustaría ver más detalles de alguna propiedad en particular o ajustar los criterios de búsqueda?"
+    return message
+
 def generate_response_internal(message, user_id):
     if not message or not user_id:
         return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
@@ -89,25 +114,14 @@ def generate_response_internal(message, user_id):
                             filters = extract_filters(context)
                             properties_data = search_properties(filters)
 
-                            # Añadir los resultados al thread
-                            if properties_data:
-                                properties_message = {
-                                    "properties": [
-                                        {
-                                            "title": prop['title'],
-                                            "price": prop['price'],
-                                            "details": f"- {prop['rooms']} ambientes\n- {prop['surface']} m²\n- {prop['condition']}\n- Expensas: ${prop['expenses']:,}" if prop['expenses'] else "",
-                                            "url": prop['url'],
-                                            "photo": prop['photos'][0] if prop['photos'] else None
-                                        }
-                                        for prop in properties_data
-                                    ]
-                                }
+                            # Formatear y enviar los resultados
+                            if properties_data is not None:
+                                formatted_message = format_property_message(properties_data)
 
                                 client.beta.threads.messages.create(
                                     thread_id=thread_id,
                                     role="user",
-                                    content=json.dumps(properties_message)
+                                    content=formatted_message
                                 )
 
                                 # Crear nuevo run para procesar los resultados
@@ -124,6 +138,8 @@ def generate_response_internal(message, user_id):
                                 for final_message in final_messages.data:
                                     if final_message.role == "assistant":
                                         return {'response': final_message.content[0].text.value}
+                            else:
+                                return {'response': "Lo siento, hubo un error al buscar propiedades."}
                     except json.JSONDecodeError:
                         logger.error("Error al decodificar el contexto de búsqueda")
 
