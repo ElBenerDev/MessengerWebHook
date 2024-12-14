@@ -126,7 +126,7 @@ class PropertyDatabase:
             return []
 
 def format_property_message(properties: List[Dict]) -> str:
-    """Formatea las propiedades para mostrar en el mensaje de WhatsApp"""
+    """Formatea las propiedades para mostrar en el mensaje"""
     if not properties:
         return "No encontré propiedades que coincidan con tu búsqueda."
 
@@ -163,7 +163,7 @@ def format_property_message(properties: List[Dict]) -> str:
         # Agregar link directo
         message += f"🔍 *Ver ficha completa*: {prop['url']}\n"
 
-        # Indicar que hay fotos disponibles
+        # Agregar fotos
         if prop['photos']:
             for photo_url in prop['photos']:
                 message += f"{photo_url}\n"
@@ -172,7 +172,7 @@ def format_property_message(properties: List[Dict]) -> str:
 
     return message
 
-def search_properties(query: str = "") -> Dict:
+def search_properties(query: str = "") -> str:
     """Función principal para buscar y formatear propiedades"""
     db = PropertyDatabase()
 

@@ -48,7 +48,7 @@ def wait_for_run(thread_id, run_id, max_wait_seconds=30):
 
 def generate_response_internal(message, user_id):
     if not message or not user_id:
-        return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
+        return "No se proporcionó un mensaje o un ID de usuario válido."
 
     try:
         thread_id = conversation_manager.get_thread_id(user_id)
@@ -61,42 +61,38 @@ def generate_response_internal(message, user_id):
             client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
-                content=f"Resultados de la búsqueda:\n\n{search_results['text']}"
+                content=search_results
             )
 
-            # Devolver tanto el texto como las imágenes
-            return {
-                'response': search_results['text'],
-                'images': search_results['images']
-            }
-        else:
-            # Enviar mensaje normal al thread
-            client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=message
-            )
+            return search_results
 
-            # Crear y ejecutar el run
-            run = client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=assistant_id
-            )
+        # Enviar mensaje normal al thread
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=message
+        )
 
-            if not wait_for_run(thread_id, run.id):
-                return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
+        # Crear y ejecutar el run
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=assistant_id
+        )
 
-            # Obtener la respuesta del asistente
-            messages = client.beta.threads.messages.list(thread_id=thread_id)
-            for msg in messages.data:
-                if msg.role == "assistant":
-                    return {'response': msg.content[0].text.value}
+        if not wait_for_run(thread_id, run.id):
+            return "Lo siento, hubo un error al procesar tu mensaje (timeout)."
 
-        return {'response': "No se pudo obtener una respuesta del asistente."}
+        # Obtener la respuesta del asistente
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        for msg in messages.data:
+            if msg.role == "assistant":
+                return msg.content[0].text.value
+
+        return "No se pudo obtener una respuesta del asistente."
 
     except Exception as e:
         logger.error(f"Error en generate_response_internal: {str(e)}")
-        return {'response': f"Error al generar respuesta: {str(e)}"}
+        return f"Error al generar respuesta: {str(e)}"
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -105,16 +101,8 @@ def generate_response():
         if not data or 'message' not in data or 'sender_id' not in data:
             return jsonify({'error': 'No message or sender_id provided'}), 400
 
-        response_data = generate_response_internal(data['message'], data['sender_id'])
-
-        # Si hay imágenes en la respuesta, incluirlas en la respuesta JSON
-        if isinstance(response_data, dict) and 'images' in response_data:
-            return jsonify({
-                'response': response_data['response'],
-                'images': response_data['images']
-            })
-
-        return jsonify({'response': response_data})
+        response = generate_response_internal(data['message'], data['sender_id'])
+        return jsonify({'response': response})
 
     except Exception as e:
         logger.error(f"Error en generate_response: {str(e)}")
