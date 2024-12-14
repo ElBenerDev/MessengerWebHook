@@ -1,9 +1,10 @@
+from typing import Dict, List, Optional, Any, Union
 import sqlite3
 import requests
 import json
 from datetime import datetime
 import logging
-from typing import Dict, List, Optional, Any
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,21 +47,15 @@ class PropertyDatabase:
                     )
                 conn.commit()
 
+            logger.info(f"Base de datos actualizada con {len(properties)} propiedades")
             return True
         except Exception as e:
             logger.error(f"Error actualizando propiedades: {str(e)}")
             return False
 
-    def search_properties(self, filters: Dict[str, Any]) -> List[Dict]:
+    def search_properties(self, query: str = "") -> List[Dict]:
         """
-        Busca propiedades según los filtros especificados
-        filters puede incluir:
-        - operation_type: "Rent" o "Sale"
-        - property_type: "Apartment", "House", etc.
-        - min_price: precio mínimo
-        - max_price: precio máximo
-        - rooms: cantidad de ambientes
-        - location: ubicación
+        Busca propiedades según el texto de búsqueda
         """
         try:
             with sqlite3.connect(self.db_path) as conn:
@@ -72,63 +67,17 @@ class PropertyDatabase:
                     if prop.get('status') != 2 or prop.get('deleted_at'):
                         continue
 
-                    matches = True
+                    # Buscar en el texto
+                    searchable_text = f"{prop.get('publication_title', '')} {prop.get('description', '')} {prop.get('location', {}).get('name', '')}".lower()
 
-                    # Filtrar por tipo de operación
-                    if filters.get('operation_type'):
-                        operations = prop.get('operations', [])
-                        operation_match = False
-                        for op in operations:
-                            if op.get('operation_type') == filters['operation_type']:
-                                operation_match = True
-                                break
-                        if not operation_match:
-                            matches = False
-                            continue
-
-                    # Filtrar por tipo de propiedad
-                    if filters.get('property_type'):
-                        prop_type = prop.get('type', {}).get('name')
-                        if prop_type != filters['property_type']:
-                            matches = False
-                            continue
-
-                    # Filtrar por precio
-                    if matches and (filters.get('min_price') or filters.get('max_price')):
-                        price_match = False
-                        for operation in prop.get('operations', []):
-                            for price_info in operation.get('prices', []):
-                                price = price_info.get('price', 0)
-                                if filters.get('min_price') and price < filters['min_price']:
-                                    continue
-                                if filters.get('max_price') and price > filters['max_price']:
-                                    continue
-                                price_match = True
-                                break
-                        if not price_match:
-                            matches = False
-                            continue
-
-                    # Filtrar por cantidad de ambientes
-                    if filters.get('rooms'):
-                        if prop.get('room_amount') != filters['rooms']:
-                            matches = False
-                            continue
-
-                    # Filtrar por ubicación
-                    if filters.get('location'):
-                        location = prop.get('location', {}).get('name', '').lower()
-                        if filters['location'].lower() not in location:
-                            matches = False
-                            continue
-
-                    if matches:
+                    if not query or query.lower() in searchable_text:
                         # Formatear la propiedad para la respuesta
                         formatted_prop = {
                             'id': prop.get('id'),
                             'title': prop.get('publication_title'),
                             'type': prop.get('type', {}).get('name'),
                             'address': prop.get('fake_address'),
+                            'location': prop.get('location', {}).get('name'),
                             'rooms': prop.get('room_amount'),
                             'bathrooms': prop.get('bathroom_amount'),
                             'surface': prop.get('total_surface'),
@@ -176,6 +125,8 @@ def format_property_message(properties: List[Dict]) -> str:
 
     for i, prop in enumerate(properties, 1):
         message += f"{i}. **{prop['title']}**\n"
+        if prop['location']:
+            message += f"   - **Ubicación**: {prop['location']}\n"
         message += f"   - **Dirección**: {prop['address']}\n"
 
         # Agregar precios
@@ -213,7 +164,7 @@ def format_property_message(properties: List[Dict]) -> str:
 
     return message
 
-def search_properties(filters: Dict[str, Any] = None) -> str:
+def search_properties(query: str = "") -> str:
     """Función principal para buscar y formatear propiedades"""
     db = PropertyDatabase()
 
@@ -221,7 +172,7 @@ def search_properties(filters: Dict[str, Any] = None) -> str:
     db.update_properties()
 
     # Realizar búsqueda
-    properties = db.search_properties(filters or {})
+    properties = db.search_properties(query)
 
     # Formatear resultados
     return format_property_message(properties)

@@ -3,9 +3,10 @@ from openai import OpenAI
 import os
 import time
 import json
-from tokko_search import search_properties
 import logging
 import re
+from typing import Dict, List, Optional, Any, Union
+from tokko_search import search_properties
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,55 +28,7 @@ class ConversationManager:
             self.contexts[user_id] = {}
         return self.threads[user_id]
 
-    def get_context(self, user_id):
-        return self.contexts.get(user_id, {})
-
-    def update_context(self, user_id, context):
-        self.contexts[user_id] = context
-
 conversation_manager = ConversationManager()
-
-def extract_search_filters(message: str, context: Dict) -> Dict[str, Any]:
-    """Extrae filtros de búsqueda del mensaje y contexto"""
-    filters = {}
-
-    # Detectar tipo de operación
-    if re.search(r'\b(alquiler|alquilar|rentar|renta)\b', message.lower()):
-        filters['operation_type'] = 'Rent'
-    elif re.search(r'\b(comprar|compra|venta|vender)\b', message.lower()):
-        filters['operation_type'] = 'Sale'
-
-    # Detectar tipo de propiedad
-    if re.search(r'\b(departamento|depto)\b', message.lower()):
-        filters['property_type'] = 'Apartment'
-    elif re.search(r'\b(casa)\b', message.lower()):
-        filters['property_type'] = 'House'
-    elif re.search(r'\b(local)\b', message.lower()):
-        filters['property_type'] = 'Bussiness Premises'
-
-    # Detectar ubicación
-    location_match = re.search(r'en\s+([A-Za-z\s]+)', message)
-    if location_match:
-        filters['location'] = location_match.group(1).strip()
-
-    # Detectar cantidad de ambientes
-    rooms_match = re.search(r'(\d+)\s+ambientes?', message)
-    if rooms_match:
-        filters['rooms'] = int(rooms_match.group(1))
-
-    # Detectar rango de precios
-    price_match = re.search(r'hasta\s+(\d+(?:\.\d+)?)', message)
-    if price_match:
-        filters['max_price'] = float(price_match.group(1).replace('.', ''))
-
-    price_match = re.search(r'desde\s+(\d+(?:\.\d+)?)', message)
-    if price_match:
-        filters['min_price'] = float(price_match.group(1).replace('.', ''))
-
-    # Combinar con contexto existente
-    filters.update(context)
-
-    return filters
 
 def wait_for_run(thread_id, run_id, max_wait_seconds=30):
     start_time = time.time()
@@ -99,15 +52,10 @@ def generate_response_internal(message, user_id):
 
     try:
         thread_id = conversation_manager.get_thread_id(user_id)
-        context = conversation_manager.get_context(user_id)
-
-        # Extraer filtros de búsqueda
-        filters = extract_search_filters(message, context)
-        conversation_manager.update_context(user_id, filters)
 
         # Verificar si el mensaje solicita una búsqueda
-        if any(word in message.lower() for word in ['buscar', 'encontrar', 'mostrar', 'ver']):
-            properties_message = search_properties(filters)
+        if any(word in message.lower() for word in ['buscar', 'encontrar', 'mostrar', 'ver', 'hay']):
+            properties_message = search_properties(message)
 
             # Enviar resultados al thread
             client.beta.threads.messages.create(
