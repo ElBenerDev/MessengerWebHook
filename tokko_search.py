@@ -1,128 +1,149 @@
 import requests
+import json
+from typing import Dict, List, Optional, Any
 import logging
-from typing import Dict, Any, Optional, List
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_property_types():
-    """Obtiene los tipos de propiedades disponibles"""
-    api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
-    response = requests.get(
-        "https://www.tokkobroker.com/api/v1/property_type/",
-        params={'key': api_key}
-    )
-    return response.json() if response.status_code == 200 else None
-
-def search_properties(filters: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
+def get_properties() -> Optional[List[Dict[str, Any]]]:
     """
-    Realiza una búsqueda de propiedades usando la API de Tokko
+    Obtiene las propiedades directamente desde la API
     """
     api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
     base_url = "https://www.tokkobroker.com/api/v1/property/"
 
-    # Parámetros base para la búsqueda
     params = {
         'key': api_key,
-        'limit': 10,
-        'offset': 0,
-        'order': '-created_at'  # Ordenar por más recientes primero
+        'status': 2,  # Propiedades activas
+        'limit': 50,
+        'offset': 0
     }
-
-    # Añadir filtros específicos
-    if filters:
-        params.update(filters)
 
     try:
         response = requests.get(base_url, params=params)
         response.raise_for_status()
         data = response.json()
 
-        # Procesar y formatear los resultados
-        formatted_properties = []
-        for prop in data:
-            # Verificar que la propiedad está activa y en alquiler
-            if (prop.get('status') == 2 and 
-                not prop.get('deleted_at') and 
-                any(op.get('operation_type') == 'Rent' for op in prop.get('operations', []))):
-
-                # Obtener el precio de alquiler
-                price_info = None
+        # Filtrar y formatear propiedades
+        properties = []
+        for prop in data.get('objects', []):
+            # Solo incluir propiedades activas y no eliminadas
+            if prop.get('status') == 2 and not prop.get('deleted_at'):
+                # Obtener información de operaciones (alquiler/venta)
+                operations = []
                 for op in prop.get('operations', []):
-                    if op.get('operation_type') == 'Rent':
-                        for price in op.get('prices', []):
-                            if price.get('currency') and price.get('price'):
-                                price_info = f"{price['currency']} {price['price']:,}"
-                                break
+                    prices = op.get('prices', [])
+                    if prices and prices[0].get('price'):
+                        operations.append({
+                            'type': op.get('operation_type'),
+                            'price': prices[0].get('price'),
+                            'currency': prices[0].get('currency', 'ARS')
+                        })
 
-                if price_info:
-                    # Obtener características principales
-                    features = []
-                    for tag in prop.get('tags', []):
-                        if tag.get('name'):
-                            features.append(tag['name'])
+                # Formatear la información de la propiedad
+                property_info = {
+                    'id': prop.get('id'),
+                    'reference': prop.get('reference_code'),
+                    'title': prop.get('publication_title'),
+                    'type': prop.get('type', {}).get('name'),
+                    'address': prop.get('fake_address'),
+                    'location': prop.get('location', {}).get('name'),
+                    'rooms': prop.get('room_amount'),
+                    'bathrooms': prop.get('bathroom_amount'),
+                    'surface': {
+                        'total': prop.get('total_surface'),
+                        'covered': prop.get('roofed_surface'),
+                        'uncovered': prop.get('unroofed_surface')
+                    },
+                    'expenses': prop.get('expenses'),
+                    'features': [
+                        tag.get('name') for tag in prop.get('tags', [])
+                        if tag.get('name')
+                    ],
+                    'description': prop.get('description'),
+                    'operations': operations,
+                    'url': f"https://ficha.info/p/{prop.get('token')}",
+                    'photos': [
+                        photo.get('image').split('?')[0]
+                        for photo in prop.get('photos', [])[:3]
+                        if photo.get('image')
+                    ]
+                }
+                properties.append(property_info)
 
-                    # Formatear la información de la propiedad
-                    property_info = {
-                        'id': prop.get('id'),
-                        'title': prop.get('publication_title', '').strip(),
-                        'type': prop.get('type', {}).get('name', ''),
-                        'address': prop.get('fake_address', '').strip(),
-                        'price': price_info,
-                        'expenses': f"ARS {prop.get('expenses'):,}" if prop.get('expenses') else "Sin expensas",
-                        'details': {
-                            'rooms': prop.get('room_amount'),
-                            'bathrooms': prop.get('bathroom_amount'),
-                            'surface': f"{prop.get('total_surface')} m²",
-                            'condition': prop.get('property_condition')
-                        },
-                        'features': features,
-                        'url': f"https://ficha.info/p/{prop.get('token')}",
-                        'photos': [
-                            photo.get('image').split('?')[0]
-                            for photo in prop.get('photos', [])[:3]
-                            if photo.get('image')
-                        ]
-                    }
-                    formatted_properties.append(property_info)
-
-        return formatted_properties
+        return properties
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error en la búsqueda: {str(e)}")
+        logger.error(f"Error al obtener propiedades: {str(e)}")
         return None
 
-def extract_filters(context: Dict) -> Dict[str, Any]:
+def format_property_message(properties: List[Dict[str, Any]]) -> str:
     """
-    Extrae y formatea los filtros de búsqueda basados en el contexto
+    Formatea las propiedades para mostrar en el mensaje
     """
-    filters = {
-        'status': 2,  # Solo propiedades activas
-        'operation_types': [2]  # Solo alquiler
-    }
+    if not properties:
+        return "No se encontraron propiedades disponibles."
 
-    # Mapeo de tipos de propiedad
-    property_types_map = {
-        'departamento': [2],
-        'casa': [3],
-        'ph': [13],
-        'local': [7]
-    }
+    message = "Estas son las propiedades disponibles:\n\n"
 
-    if context.get('property_type') in property_types_map:
-        filters['property_types'] = property_types_map[context['property_type']]
+    for i, prop in enumerate(properties, 1):
+        message += f"{i}. **{prop['title']}**\n"
+        message += f"   - **Tipo**: {prop['type']}\n"
+        message += f"   - **Dirección**: {prop['address']}\n"
 
-    # Ubicación (Villa Ballester por defecto)
-    filters['location'] = context.get('location', 25034)  # ID de Villa Ballester
+        # Agregar precios de operaciones
+        for op in prop['operations']:
+            message += f"   - **{op['type']}**: {op['currency']} {op['price']:,}\n"
 
-    # Cantidad de ambientes
-    if context.get('rooms'):
-        filters['room_amount'] = context['rooms']
+        if prop['expenses']:
+            message += f"   - **Expensas**: ARS {prop['expenses']:,}\n"
 
-    # Rango de precios
-    if context.get('max_price'):
-        filters['max_price'] = context['max_price']
-    if context.get('min_price'):
-        filters['min_price'] = context['min_price']
+        # Agregar detalles
+        details = []
+        if prop['rooms']:
+            details.append(f"{prop['rooms']} ambientes")
+        if prop['bathrooms']:
+            details.append(f"{prop['bathrooms']} baños")
+        if prop['surface']['total']:
+            details.append(f"{prop['surface']['total']} m² totales")
+        if details:
+            message += f"   - **Detalles**: {', '.join(details)}\n"
 
-    return filters
+        # Agregar características
+        if prop['features']:
+            message += f"   - **Características**: {', '.join(prop['features'])}\n"
+
+        message += f"   - **[Ver más información]({prop['url']})**\n"
+
+        # Agregar fotos
+        if prop['photos']:
+            message += "   - **Fotos**:\n"
+            for photo in prop['photos']:
+                message += f"     ![Foto]({photo})\n"
+
+        message += "\n"
+
+    return message
+
+def search_properties(filters: Dict[str, Any] = None) -> Optional[str]:
+    """
+    Función principal para buscar y formatear propiedades
+    """
+    properties = get_properties()
+    if properties is not None:
+        # Aplicar filtros si existen
+        if filters:
+            filtered_properties = []
+            for prop in properties:
+                matches = True
+                for key, value in filters.items():
+                    if key in prop and prop[key] != value:
+                        matches = False
+                        break
+                if matches:
+                    filtered_properties.append(prop)
+            properties = filtered_properties
+
+        return format_property_message(properties)
+    return "Lo siento, hubo un error al buscar propiedades."
