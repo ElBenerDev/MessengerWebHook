@@ -3,7 +3,7 @@ from openai import OpenAI
 import os
 import time
 import json
-from tokko_search import extract_filters, search_properties
+from tokko_search import search_properties
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -42,45 +42,6 @@ def wait_for_run(thread_id, run_id, max_wait_seconds=30):
             return False
         time.sleep(1)
 
-def format_property_message(properties):
-    """
-    Formatea las propiedades para el mensaje del asistente
-    """
-    if not properties:
-        return "Lo siento, no encontré propiedades que coincidan con tus criterios de búsqueda."
-
-    message = "Encontré las siguientes propiedades que podrían interesarte:\n\n"
-
-    for i, prop in enumerate(properties, 1):
-        message += f"{i}. **{prop['title']}**\n"
-        message += f"   - **Precio**: {prop['price']}\n"
-        message += f"   - **Expensas**: {prop['expenses']}\n"
-
-        details = []
-        if prop['details']['rooms']:
-            details.append(f"{prop['details']['rooms']} ambientes")
-        if prop['details']['bathrooms']:
-            details.append(f"{prop['details']['bathrooms']} baños")
-        if prop['details']['surface']:
-            details.append(f"{prop['details']['surface']}")
-        if details:
-            message += f"   - **Detalles**: {' | '.join(details)}\n"
-
-        if prop['features']:
-            message += f"   - **Características**: {', '.join(prop['features'])}\n"
-
-        message += f"   - **[Ver más información]({prop['url']})**\n"
-
-        if prop['photos']:
-            message += "   - **Fotos**:\n"
-            for photo in prop['photos']:
-                message += f"     ![Foto]({photo})\n"
-
-        message += "\n"
-
-    message += "¿Te gustaría ver más detalles de alguna propiedad en particular o ajustar los criterios de búsqueda?"
-    return message
-
 def generate_response_internal(message, user_id):
     if not message or not user_id:
         return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
@@ -111,51 +72,42 @@ def generate_response_internal(message, user_id):
         if not wait_for_run(thread_id, run.id):
             return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
 
-        # Verificar si el asistente solicitó una búsqueda
+        # Obtener la respuesta del asistente
         messages = client.beta.threads.messages.list(thread_id=thread_id)
         for message in messages.data:
             if message.role == "assistant":
                 content = message.content[0].text.value
+
+                # Verificar si se solicita una búsqueda de propiedades
                 if "search_properties" in content:
                     try:
-                        # Extraer el contexto de la búsqueda
-                        search_start = content.find("{")
-                        search_end = content.rfind("}") + 1
-                        if search_start != -1 and search_end != -1:
-                            context = json.loads(content[search_start:search_end])
+                        # Realizar la búsqueda
+                        properties_message = search_properties()
 
-                            # Realizar la búsqueda
-                            filters = extract_filters(context)
-                            properties_data = search_properties(filters)
+                        # Enviar resultados al thread
+                        client.beta.threads.messages.create(
+                            thread_id=thread_id,
+                            role="user",
+                            content=properties_message
+                        )
 
-                            # Formatear y enviar los resultados
-                            if properties_data is not None:
-                                formatted_message = format_property_message(properties_data)
+                        # Crear nuevo run para procesar los resultados
+                        run = client.beta.threads.runs.create(
+                            thread_id=thread_id,
+                            assistant_id=assistant_id
+                        )
 
-                                client.beta.threads.messages.create(
-                                    thread_id=thread_id,
-                                    role="user",
-                                    content=formatted_message
-                                )
+                        if not wait_for_run(thread_id, run.id):
+                            return {'response': "Error al procesar los resultados de la búsqueda."}
 
-                                # Crear nuevo run para procesar los resultados
-                                run = client.beta.threads.runs.create(
-                                    thread_id=thread_id,
-                                    assistant_id=assistant_id
-                                )
-
-                                if not wait_for_run(thread_id, run.id):
-                                    return {'response': "Error al procesar los resultados de la búsqueda."}
-
-                                # Obtener la respuesta final
-                                final_messages = client.beta.threads.messages.list(thread_id=thread_id)
-                                for final_message in final_messages.data:
-                                    if final_message.role == "assistant":
-                                        return {'response': final_message.content[0].text.value}
-                            else:
-                                return {'response': "Lo siento, hubo un error al buscar propiedades."}
-                    except json.JSONDecodeError:
-                        logger.error("Error al decodificar el contexto de búsqueda")
+                        # Obtener la respuesta final
+                        final_messages = client.beta.threads.messages.list(thread_id=thread_id)
+                        for final_message in final_messages.data:
+                            if final_message.role == "assistant":
+                                return {'response': final_message.content[0].text.value}
+                    except Exception as e:
+                        logger.error(f"Error en la búsqueda de propiedades: {str(e)}")
+                        return {'response': "Lo siento, hubo un error al buscar propiedades."}
 
                 return {'response': content}
 
