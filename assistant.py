@@ -1,9 +1,6 @@
 from flask import Flask, request, jsonify
 from openai import OpenAI
-from openai import AssistantEventHandler
-from typing_extensions import override
 import os
-import json
 import time
 from tokko_search import extract_filters, search_properties
 
@@ -26,6 +23,59 @@ class ConversationManager:
 
 conversation_manager = ConversationManager()
 
+def format_property_response(properties):
+    if not properties:
+        return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
+
+    if properties is None:
+        return "Hubo un error al realizar la búsqueda. Por favor, intente nuevamente."
+
+    response = "📍 Propiedades encontradas:\n\n"
+
+    for prop in properties:
+        # Título y tipo de propiedad
+        response += f"🏠 *{prop['title']}*\n"
+
+        # Precio
+        price = prop['price']
+        price_str = f"{price['currency']} {price['amount']:,}"
+        if price['period'] == 1:
+            price_str += " por mes"
+        response += f"💰 Precio: {price_str}\n"
+
+        # Ubicación
+        response += f"📍 Ubicación: {prop['location']['address']}\n"
+
+        # Características principales
+        chars = prop['characteristics']
+        if chars['surface']:
+            response += f"📏 Superficie total: {chars['surface']}m²\n"
+        if chars['rooms'] > 0:
+            response += f"🛏️ Ambientes: {chars['rooms']}\n"
+        if chars['bathrooms'] > 0:
+            response += f"🚿 Baños: {chars['bathrooms']}\n"
+        if chars['bedrooms'] > 0:
+            response += f"🛏️ Dormitorios: {chars['bedrooms']}\n"
+
+        # Amenities
+        if prop['amenities']:
+            response += "✨ Características: " + ", ".join(prop['amenities'][:5]) + "\n"
+
+        # Expensas
+        if prop['features']['expenses'] > 0:
+            response += f"💵 Expensas: ${prop['features']['expenses']:,}\n"
+
+        # Información adicional
+        response += f"🔑 Operación: {chars['operation_type']}\n"
+        response += f"📝 Código de referencia: {prop['reference_code']}\n"
+
+        if prop['images']:
+            response += "🖼️ Imágenes disponibles\n"
+
+        response += "\n-------------------\n\n"
+
+    return response
+
 def wait_for_run(thread_id, run_id, max_wait_seconds=30):
     start_time = time.time()
     while True:
@@ -42,42 +92,23 @@ def wait_for_run(thread_id, run_id, max_wait_seconds=30):
             return False
         time.sleep(1)
 
-def format_property_response(properties):
-    if not properties:
-        return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
-
-    response = "Aquí tienes las propiedades disponibles:\n\n"
-    for prop in properties:
-        response += f"🏠 *{prop['title']}*\n"
-        response += f"💰 Precio: {prop['price']}\n"
-        response += f"📍 Ubicación: {prop['location']}\n"
-        response += f"📏 Superficie: {prop['surface']}\n"
-        response += f"🛏️ Ambientes: {prop['rooms']}\n"
-        response += f"🚿 Baños: {prop['bathrooms']}\n"
-        if prop['expenses'] > 0:
-            response += f"💵 Expensas: ${prop['expenses']}\n"
-        response += f"🔑 Operación: {prop['operation_type']}\n"
-        response += f"📝 Código: {prop['reference_code']}\n"
-        if prop['images']:
-            response += "🖼️ Imágenes disponibles\n"
-        response += "\n-------------------\n\n"
-
-    return response
-
 def generate_response_internal(message, user_id):
     if not message or not user_id:
         return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
 
     # Verificar si el mensaje solicita una búsqueda de propiedades
-    if any(keyword in message.lower() for keyword in ["buscar", "propiedades", "alquiler", "comprar", "venta"]):
-        filters = extract_filters(message)
-        properties = search_properties(filters)
+    search_keywords = ["buscar", "propiedades", "alquiler", "comprar", "venta", 
+                      "departamento", "casa", "ph", "oficina", "local"]
 
-        if properties is None:
-            return {'response': "No se pudo realizar la búsqueda de propiedades en este momento."}
-
-        response_message = format_property_response(properties)
-        return {'response': response_message}
+    if any(keyword in message.lower() for keyword in search_keywords):
+        try:
+            filters = extract_filters(message)
+            properties = search_properties(filters)
+            response_message = format_property_response(properties)
+            return {'response': response_message}
+        except Exception as e:
+            print(f"Error en la búsqueda de propiedades: {str(e)}")
+            return {'response': "Hubo un error al procesar la búsqueda de propiedades."}
 
     try:
         thread_id = conversation_manager.get_thread_id(user_id)
@@ -121,16 +152,11 @@ def generate_response_internal(message, user_id):
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
     try:
-        print("Datos recibidos:", request.json)
         data = request.json
         if not data or 'message' not in data or 'sender_id' not in data:
-            print("Faltan campos requeridos:", data)
             return jsonify({'error': 'No message or sender_id provided'}), 400
 
-        message = data['message']
-        sender_id = data['sender_id']
-
-        response_data = generate_response_internal(message, sender_id)
+        response_data = generate_response_internal(data['message'], data['sender_id'])
         return jsonify(response_data)
 
     except Exception as e:
