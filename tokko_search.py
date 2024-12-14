@@ -14,18 +14,24 @@ def extract_filters(user_message: str) -> Dict[str, Any]:
         "status": 2,  # Solo propiedades activas
         "limit": 20,
         "offset": 0,
-        "operation_types": [],
+        "operation_types": [2],  # Por defecto alquiler
         "property_types": [],
         "location": None
     }
 
-    # Determinar tipo de operación (ahora más específico)
-    if any(word in message for word in ["alquiler", "alquilar", "renta", "rentar"]):
-        filters["operation_types"] = [2]  # Alquiler
-        if "temporal" in message:
-            filters["operation_types"] = [3]  # Alquiler temporal
-    elif any(word in message for word in ["venta", "comprar", "compra", "vender"]):
+    # Determinar tipo de operación
+    if "temporal" in message:
+        filters["operation_types"] = [3]  # Alquiler temporal
+    elif "venta" in message or "comprar" in message:
         filters["operation_types"] = [1]  # Venta
+
+    # Tipo de propiedad
+    if any(word in message for word in ["departamento", "depto", "dpto"]):
+        filters["property_types"].append(2)  # Apartment
+    if "casa" in message:
+        filters["property_types"].append(3)  # House
+    if "ph" in message:
+        filters["property_types"].append(13)  # PH/Condo
 
     # Ubicación
     location_keywords = {
@@ -39,14 +45,6 @@ def extract_filters(user_message: str) -> Dict[str, Any]:
         if keyword in message:
             filters["location"] = location
             break
-
-    # Tipo de propiedad
-    if any(word in message for word in ["departamento", "depto", "dpto"]):
-        filters["property_types"].append(2)  # Apartment
-    if "casa" in message:
-        filters["property_types"].append(3)  # House
-    if "ph" in message:
-        filters["property_types"].append(13)  # PH/Condo
 
     logger.info(f"Filtros generados: {json.dumps(filters, indent=2)}")
     return filters
@@ -103,14 +101,14 @@ def search_properties(filters: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]
                 'condition': property.get('property_condition', 'No especificado'),
                 'surface': f"{property.get('total_surface', 0)} m²",
                 'price': price_str,
-                'operation_type': operation_info['operation_type'],
                 'rooms': property.get('room_amount', 0),
                 'bathrooms': property.get('bathroom_amount', 0),
                 'expenses': property.get('expenses', 0),
                 'description': property.get('description', ''),
-                'images': [photo.get('image') for photo in property.get('photos', [])[:3]],
+                'tags': property.get('tags', []),
                 'reference': property.get('reference_code', ''),
-                'url': property.get('public_url', '')
+                'public_url': property.get('public_url', ''),
+                'images': [photo.get('image') for photo in property.get('photos', [])[:3]]
             }
 
             results.append(property_info)
@@ -118,11 +116,8 @@ def search_properties(filters: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]
         logger.info(f"Se encontraron {len(results)} propiedades que coinciden con los criterios")
         return results
 
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error al conectarse a la API de Tokko: {str(e)}")
-        return None
     except Exception as e:
-        logger.error(f"Error inesperado al procesar la búsqueda: {str(e)}")
+        logger.error(f"Error en la búsqueda: {str(e)}")
         return None
 
 def format_property_response(properties: Optional[List[Dict[str, Any]]]) -> str:
@@ -135,11 +130,8 @@ def format_property_response(properties: Optional[List[Dict[str, Any]]]) -> str:
     response = "📍 Propiedades encontradas:\n\n"
 
     for prop in properties:
-        # Solo incluir el tipo de operación en el título si no está ya incluido
-        operation_type = "Alquiler" if "Rent" in prop['operation_type'] else "Venta"
-        title = prop['title'] if operation_type.lower() in prop['title'].lower() else f"{operation_type} - {prop['title']}"
-
-        response += f"🏠 *{title}*\n"
+        # Título y tipo de propiedad
+        response += f"🏠 *{prop['title']}*\n"
         response += f"📍 Ubicación: {prop['address']}\n"
         response += f"💰 Precio: {prop['price']}\n"
         response += f"📏 Superficie: {prop['surface']}\n"
@@ -152,8 +144,12 @@ def format_property_response(properties: Optional[List[Dict[str, Any]]]) -> str:
             response += f"💵 Expensas: ${prop['expenses']:,}\n"
 
         response += f"✨ Estado: {prop['condition']}\n"
-        if prop['url']:
-            response += f"🔍 Más información: {prop['url']}\n"
+
+        # Agregar URL como hipervínculo
+        if prop['public_url']:
+            response += f"🔍 [Ver más detalles]({prop['public_url']})\n"
+
+        response += f"📝 Código de referencia: {prop['reference']}\n"
 
         response += "\n-------------------\n\n"
 
