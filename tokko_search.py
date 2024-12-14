@@ -1,7 +1,13 @@
 import requests
 import json
+from typing import Dict, List, Optional, Any
+import logging
 
-def extract_filters(user_message):
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def extract_filters(user_message: str) -> Dict[str, Any]:
     message = user_message.lower()
 
     filters = {
@@ -10,40 +16,18 @@ def extract_filters(user_message):
         "offset": 0,
         "operation_types": [],
         "property_types": [],
-        "location": None,
-        "price_range": {
-            "min": 0,
-            "max": None,
-            "currency": "USD"
-        }
+        "location": None
     }
 
-    # Mapeo de operaciones
-    if "alquiler temporal" in message:
-        filters["operation_types"] = [3]
-    elif "alquiler" in message:
-        filters["operation_types"] = [2]
-    elif any(word in message for word in ["venta", "comprar", "compra"]):
-        filters["operation_types"] = [1]
+    # Determinar tipo de operación (ahora más específico)
+    if any(word in message for word in ["alquiler", "alquilar", "renta", "rentar"]):
+        filters["operation_types"] = [2]  # Alquiler
+        if "temporal" in message:
+            filters["operation_types"] = [3]  # Alquiler temporal
+    elif any(word in message for word in ["venta", "comprar", "compra", "vender"]):
+        filters["operation_types"] = [1]  # Venta
 
-    # Si no se especifica operación, asumimos alquiler
-    if not filters["operation_types"]:
-        filters["operation_types"] = [2]
-
-    # Mapeo de tipos de propiedad
-    property_types = {
-        "departamento": 2,
-        "casa": 3,
-        "ph": 13,
-        "oficina": 5,
-        "local": 4
-    }
-
-    for prop_type, type_id in property_types.items():
-        if prop_type in message:
-            filters["property_types"].append(type_id)
-
-    # Detectar ubicación
+    # Ubicación
     location_keywords = {
         "ballester": "Villa Ballester",
         "villa ballester": "Villa Ballester",
@@ -56,20 +40,28 @@ def extract_filters(user_message):
             filters["location"] = location
             break
 
-    print(f"Filtros generados: {json.dumps(filters, indent=2)}")
+    # Tipo de propiedad
+    if any(word in message for word in ["departamento", "depto", "dpto"]):
+        filters["property_types"].append(2)  # Apartment
+    if "casa" in message:
+        filters["property_types"].append(3)  # House
+    if "ph" in message:
+        filters["property_types"].append(13)  # PH/Condo
+
+    logger.info(f"Filtros generados: {json.dumps(filters, indent=2)}")
     return filters
 
-def search_properties(filters):
+def search_properties(filters: Dict[str, Any]) -> Optional[List[Dict[str, Any]]]:
     tokko_url = "https://www.tokkobroker.com/api/v1/property/search?key=34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
     try:
-        print(f"Enviando solicitud a Tokko con filtros: {json.dumps(filters, indent=2)}")
+        logger.info(f"Enviando solicitud a Tokko con filtros: {json.dumps(filters, indent=2)}")
         response = requests.post(tokko_url, json=filters)
         response.raise_for_status()
         data = response.json()
 
         if 'objects' not in data:
-            print("No se encontraron propiedades en la respuesta")
+            logger.warning("No se encontraron propiedades en la respuesta")
             return []
 
         results = []
@@ -78,14 +70,10 @@ def search_properties(filters):
             if property.get('deleted_at') or property.get('status') != 2:
                 continue
 
-            # Procesar operaciones
+            # Verificar operaciones
             operation_info = None
             for operation in property.get('operations', []):
-                if filters.get('operation_types'):
-                    if operation['operation_id'] in filters['operation_types']:
-                        operation_info = operation
-                        break
-                else:
+                if operation['operation_id'] in filters.get('operation_types', []):
                     operation_info = operation
                     break
 
@@ -97,50 +85,76 @@ def search_properties(filters):
             if operation_info.get('prices'):
                 price_info = operation_info['prices'][0]
 
+            # Formatear el precio
+            price_str = "Consultar"
+            if price_info:
+                amount = price_info.get('price', 0)
+                currency = price_info.get('currency', '')
+                period = price_info.get('period', 0)
+
+                price_str = f"{currency} {amount:,}"
+                if period == 1:  # Mensual
+                    price_str += " por mes"
+
             # Crear objeto de propiedad
             property_info = {
-                'id': property.get('id'),
                 'title': property.get('publication_title', 'Sin título'),
-                'price': {
-                    'currency': price_info.get('currency') if price_info else 'USD',
-                    'amount': price_info.get('price', 0) if price_info else 0,
-                    'period': price_info.get('period', 0) if price_info else 0
-                },
-                'location': {
-                    'address': property.get('fake_address') or property.get('address', 'Dirección no disponible'),
-                    'area': property.get('location', {}).get('name'),
-                    'coordinates': {
-                        'lat': property.get('geo_lat'),
-                        'lon': property.get('geo_long')
-                    }
-                },
-                'characteristics': {
-                    'surface': property.get('total_surface'),
-                    'covered_surface': property.get('roofed_surface'),
-                    'rooms': property.get('room_amount', 0),
-                    'bathrooms': property.get('bathroom_amount', 0),
-                    'bedrooms': property.get('suite_amount', 0),
-                    'property_type': property.get('type', {}).get('name'),
-                    'operation_type': operation_info.get('operation_type')
-                },
-                'features': {
-                    'expenses': property.get('expenses', 0),
-                    'disposition': property.get('disposition'),
-                    'condition': property.get('property_condition')
-                },
-                'amenities': [tag.get('name') for tag in property.get('tags', []) if tag.get('name')],
+                'address': property.get('fake_address', property.get('address', 'Dirección no disponible')),
+                'condition': property.get('property_condition', 'No especificado'),
+                'surface': f"{property.get('total_surface', 0)} m²",
+                'price': price_str,
+                'operation_type': operation_info['operation_type'],
+                'rooms': property.get('room_amount', 0),
+                'bathrooms': property.get('bathroom_amount', 0),
+                'expenses': property.get('expenses', 0),
+                'description': property.get('description', ''),
                 'images': [photo.get('image') for photo in property.get('photos', [])[:3]],
-                'reference_code': property.get('reference_code', '')
+                'reference': property.get('reference_code', ''),
+                'url': property.get('public_url', '')
             }
 
             results.append(property_info)
 
-        print(f"Se encontraron {len(results)} propiedades que coinciden con los criterios")
+        logger.info(f"Se encontraron {len(results)} propiedades que coinciden con los criterios")
         return results
 
     except requests.exceptions.RequestException as e:
-        print(f"Error en la conexión con Tokko: {str(e)}")
+        logger.error(f"Error al conectarse a la API de Tokko: {str(e)}")
         return None
     except Exception as e:
-        print(f"Error procesando datos: {str(e)}")
+        logger.error(f"Error inesperado al procesar la búsqueda: {str(e)}")
         return None
+
+def format_property_response(properties: Optional[List[Dict[str, Any]]]) -> str:
+    if not properties:
+        return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
+
+    if properties is None:
+        return "Hubo un error al realizar la búsqueda. Por favor, intente nuevamente."
+
+    response = "📍 Propiedades encontradas:\n\n"
+
+    for prop in properties:
+        # Solo incluir el tipo de operación en el título si no está ya incluido
+        operation_type = "Alquiler" if "Rent" in prop['operation_type'] else "Venta"
+        title = prop['title'] if operation_type.lower() in prop['title'].lower() else f"{operation_type} - {prop['title']}"
+
+        response += f"🏠 *{title}*\n"
+        response += f"📍 Ubicación: {prop['address']}\n"
+        response += f"💰 Precio: {prop['price']}\n"
+        response += f"📏 Superficie: {prop['surface']}\n"
+
+        if prop['rooms'] > 0:
+            response += f"🛏️ Ambientes: {prop['rooms']}\n"
+        if prop['bathrooms'] > 0:
+            response += f"🚿 Baños: {prop['bathrooms']}\n"
+        if prop['expenses'] > 0:
+            response += f"💵 Expensas: ${prop['expenses']:,}\n"
+
+        response += f"✨ Estado: {prop['condition']}\n"
+        if prop['url']:
+            response += f"🔍 Más información: {prop['url']}\n"
+
+        response += "\n-------------------\n\n"
+
+    return response

@@ -33,44 +33,25 @@ def format_property_response(properties):
     response = "📍 Propiedades encontradas:\n\n"
 
     for prop in properties:
-        # Título y tipo de propiedad
-        response += f"🏠 *{prop['title']}*\n"
+        # Solo incluir el tipo de operación en el título si no está ya incluido
+        operation_type = "Alquiler" if "Rent" in prop['operation_type'] else "Venta"
+        title = prop['title'] if operation_type.lower() in prop['title'].lower() else f"{operation_type} - {prop['title']}"
 
-        # Precio
-        price = prop['price']
-        price_str = f"{price['currency']} {price['amount']:,}"
-        if price['period'] == 1:
-            price_str += " por mes"
-        response += f"💰 Precio: {price_str}\n"
+        response += f"🏠 *{title}*\n"
+        response += f"📍 Ubicación: {prop['address']}\n"
+        response += f"💰 Precio: {prop['price']}\n"
+        response += f"📏 Superficie: {prop['surface']}\n"
 
-        # Ubicación
-        response += f"📍 Ubicación: {prop['location']['address']}\n"
+        if prop['rooms'] > 0:
+            response += f"🛏️ Ambientes: {prop['rooms']}\n"
+        if prop['bathrooms'] > 0:
+            response += f"🚿 Baños: {prop['bathrooms']}\n"
+        if prop['expenses'] > 0:
+            response += f"💵 Expensas: ${prop['expenses']:,}\n"
 
-        # Características principales
-        chars = prop['characteristics']
-        if chars['surface']:
-            response += f"📏 Superficie total: {chars['surface']}m²\n"
-        if chars['rooms'] > 0:
-            response += f"🛏️ Ambientes: {chars['rooms']}\n"
-        if chars['bathrooms'] > 0:
-            response += f"🚿 Baños: {chars['bathrooms']}\n"
-        if chars['bedrooms'] > 0:
-            response += f"🛏️ Dormitorios: {chars['bedrooms']}\n"
-
-        # Amenities
-        if prop['amenities']:
-            response += "✨ Características: " + ", ".join(prop['amenities'][:5]) + "\n"
-
-        # Expensas
-        if prop['features']['expenses'] > 0:
-            response += f"💵 Expensas: ${prop['features']['expenses']:,}\n"
-
-        # Información adicional
-        response += f"🔑 Operación: {chars['operation_type']}\n"
-        response += f"📝 Código de referencia: {prop['reference_code']}\n"
-
-        if prop['images']:
-            response += "🖼️ Imágenes disponibles\n"
+        response += f"✨ Estado: {prop['condition']}\n"
+        if prop['url']:
+            response += f"🔍 Más información: {prop['url']}\n"
 
         response += "\n-------------------\n\n"
 
