@@ -5,6 +5,7 @@ import time
 import json
 from tokko_search import search_properties
 import logging
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,14 +18,64 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 class ConversationManager:
     def __init__(self):
         self.threads = {}
+        self.contexts = {}
 
     def get_thread_id(self, user_id):
         if user_id not in self.threads:
             thread = client.beta.threads.create()
             self.threads[user_id] = thread.id
+            self.contexts[user_id] = {}
         return self.threads[user_id]
 
+    def get_context(self, user_id):
+        return self.contexts.get(user_id, {})
+
+    def update_context(self, user_id, context):
+        self.contexts[user_id] = context
+
 conversation_manager = ConversationManager()
+
+def extract_search_filters(message: str, context: Dict) -> Dict[str, Any]:
+    """Extrae filtros de búsqueda del mensaje y contexto"""
+    filters = {}
+
+    # Detectar tipo de operación
+    if re.search(r'\b(alquiler|alquilar|rentar|renta)\b', message.lower()):
+        filters['operation_type'] = 'Rent'
+    elif re.search(r'\b(comprar|compra|venta|vender)\b', message.lower()):
+        filters['operation_type'] = 'Sale'
+
+    # Detectar tipo de propiedad
+    if re.search(r'\b(departamento|depto)\b', message.lower()):
+        filters['property_type'] = 'Apartment'
+    elif re.search(r'\b(casa)\b', message.lower()):
+        filters['property_type'] = 'House'
+    elif re.search(r'\b(local)\b', message.lower()):
+        filters['property_type'] = 'Bussiness Premises'
+
+    # Detectar ubicación
+    location_match = re.search(r'en\s+([A-Za-z\s]+)', message)
+    if location_match:
+        filters['location'] = location_match.group(1).strip()
+
+    # Detectar cantidad de ambientes
+    rooms_match = re.search(r'(\d+)\s+ambientes?', message)
+    if rooms_match:
+        filters['rooms'] = int(rooms_match.group(1))
+
+    # Detectar rango de precios
+    price_match = re.search(r'hasta\s+(\d+(?:\.\d+)?)', message)
+    if price_match:
+        filters['max_price'] = float(price_match.group(1).replace('.', ''))
+
+    price_match = re.search(r'desde\s+(\d+(?:\.\d+)?)', message)
+    if price_match:
+        filters['min_price'] = float(price_match.group(1).replace('.', ''))
+
+    # Combinar con contexto existente
+    filters.update(context)
+
+    return filters
 
 def wait_for_run(thread_id, run_id, max_wait_seconds=30):
     start_time = time.time()
@@ -48,20 +99,29 @@ def generate_response_internal(message, user_id):
 
     try:
         thread_id = conversation_manager.get_thread_id(user_id)
+        context = conversation_manager.get_context(user_id)
 
-        # Verificar y esperar cualquier ejecución pendiente
-        runs = client.beta.threads.runs.list(thread_id=thread_id)
-        for run in runs.data:
-            if run.status not in ['completed', 'failed', 'cancelled', 'expired']:
-                if not wait_for_run(thread_id, run.id):
-                    return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
+        # Extraer filtros de búsqueda
+        filters = extract_search_filters(message, context)
+        conversation_manager.update_context(user_id, filters)
 
-        # Crear el nuevo mensaje del usuario
-        client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=message
-        )
+        # Verificar si el mensaje solicita una búsqueda
+        if any(word in message.lower() for word in ['buscar', 'encontrar', 'mostrar', 'ver']):
+            properties_message = search_properties(filters)
+
+            # Enviar resultados al thread
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=f"Resultados de la búsqueda:\n\n{properties_message}"
+            )
+        else:
+            # Enviar mensaje normal al thread
+            client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=message
+            )
 
         # Crear y ejecutar el run
         run = client.beta.threads.runs.create(
@@ -74,42 +134,9 @@ def generate_response_internal(message, user_id):
 
         # Obtener la respuesta del asistente
         messages = client.beta.threads.messages.list(thread_id=thread_id)
-        for message in messages.data:
-            if message.role == "assistant":
-                content = message.content[0].text.value
-
-                # Verificar si se solicita una búsqueda de propiedades
-                if "search_properties" in content:
-                    try:
-                        # Realizar la búsqueda
-                        properties_message = search_properties()
-
-                        # Enviar resultados al thread
-                        client.beta.threads.messages.create(
-                            thread_id=thread_id,
-                            role="user",
-                            content=properties_message
-                        )
-
-                        # Crear nuevo run para procesar los resultados
-                        run = client.beta.threads.runs.create(
-                            thread_id=thread_id,
-                            assistant_id=assistant_id
-                        )
-
-                        if not wait_for_run(thread_id, run.id):
-                            return {'response': "Error al procesar los resultados de la búsqueda."}
-
-                        # Obtener la respuesta final
-                        final_messages = client.beta.threads.messages.list(thread_id=thread_id)
-                        for final_message in final_messages.data:
-                            if final_message.role == "assistant":
-                                return {'response': final_message.content[0].text.value}
-                    except Exception as e:
-                        logger.error(f"Error en la búsqueda de propiedades: {str(e)}")
-                        return {'response': "Lo siento, hubo un error al buscar propiedades."}
-
-                return {'response': content}
+        for msg in messages.data:
+            if msg.role == "assistant":
+                return {'response': msg.content[0].text.value}
 
         return {'response': "No se pudo obtener una respuesta del asistente."}
 
