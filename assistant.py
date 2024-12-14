@@ -50,18 +50,32 @@ def format_property_message(properties):
         return "Lo siento, no encontré propiedades que coincidan con tus criterios de búsqueda."
 
     message = "Encontré las siguientes propiedades que podrían interesarte:\n\n"
+
     for i, prop in enumerate(properties, 1):
         message += f"{i}. **{prop['title']}**\n"
         message += f"   - **Precio**: {prop['price']}\n"
-        if prop['details']:
-            message += f"   - **Detalles**: {prop['details']}\n"
-        if prop['description']:
-            message += f"   - **Descripción**: {prop['description']}\n"
+        message += f"   - **Expensas**: {prop['expenses']}\n"
+
+        details = []
+        if prop['details']['rooms']:
+            details.append(f"{prop['details']['rooms']} ambientes")
+        if prop['details']['bathrooms']:
+            details.append(f"{prop['details']['bathrooms']} baños")
+        if prop['details']['surface']:
+            details.append(f"{prop['details']['surface']}")
+        if details:
+            message += f"   - **Detalles**: {' | '.join(details)}\n"
+
+        if prop['features']:
+            message += f"   - **Características**: {', '.join(prop['features'])}\n"
+
         message += f"   - **[Ver más información]({prop['url']})**\n"
+
         if prop['photos']:
             message += "   - **Fotos**:\n"
             for photo in prop['photos']:
                 message += f"     ![Foto]({photo})\n"
+
         message += "\n"
 
     message += "¿Te gustaría ver más detalles de alguna propiedad en particular o ajustar los criterios de búsqueda?"
