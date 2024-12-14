@@ -30,21 +30,32 @@ def search_properties(filters: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         formatted_results = []
         for prop in data:
             if prop.get('status') == 2 and not prop.get('deleted_at'):  # Solo propiedades activas
+                # Obtener el precio
+                price_info = ""
+                if prop.get('operations'):
+                    for op in prop['operations']:
+                        if op.get('prices'):
+                            price = op['prices'][0]
+                            price_info = f"{price.get('currency', '')} {price.get('price', '')}"
+                            break
+
+                # Obtener la primera foto si existe
+                photo_url = ""
+                if prop.get('photos') and len(prop.get('photos')) > 0:
+                    photo_url = prop['photos'][0].get('thumb', '')
+
                 property_info = {
-                    'reference': prop.get('reference_code'),
                     'title': prop.get('publication_title'),
-                    'type': prop.get('type', {}).get('name'),
-                    'operation': [op['operation_type'] for op in prop.get('operations', [])],
-                    'prices': [{'currency': p['currency'], 'amount': p['price'], 'period': p['period']} 
-                             for op in prop.get('operations', []) 
-                             for p in op.get('prices', [])],
-                    'location': prop.get('location', {}).get('name'),
-                    'surface': prop.get('total_surface'),
+                    'address': prop.get('fake_address'),
+                    'price': price_info,
+                    'details': prop.get('description_only', ''),
+                    'url': f"https://ficha.info/p/{prop.get('token')}",
+                    'photo': photo_url,
                     'rooms': prop.get('room_amount'),
                     'bathrooms': prop.get('bathroom_amount'),
-                    'expenses': prop.get('expenses'),
-                    'ficha_url': f"https://ficha.info/p/{prop.get('token')}",
-                    'condition': prop.get('property_condition')
+                    'surface': prop.get('total_surface'),
+                    'condition': prop.get('property_condition'),
+                    'expenses': prop.get('expenses')
                 }
                 formatted_results.append(property_info)
 

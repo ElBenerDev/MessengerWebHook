@@ -91,10 +91,11 @@ def generate_response_internal(message, user_id):
 
                             # Añadir los resultados al thread
                             if properties_data:
+                                formatted_message = json.dumps(properties_data)
                                 client.beta.threads.messages.create(
                                     thread_id=thread_id,
                                     role="user",
-                                    content=json.dumps(properties_data)
+                                    content=formatted_message
                                 )
 
                                 # Crear nuevo run para procesar los resultados
