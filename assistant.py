@@ -2,7 +2,13 @@ from flask import Flask, request, jsonify
 from openai import OpenAI
 import os
 import time
-from tokko_search import extract_filters, search_properties, format_property_response
+import json
+from tokko_search import extract_filters, search_properties
+import logging
+
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -12,13 +18,13 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 class ConversationManager:
     def __init__(self):
         self.threads = {}
-        print("ConversationManager inicializado")
+        logger.info("ConversationManager inicializado")
 
     def get_thread_id(self, user_id):
         if user_id not in self.threads:
             thread = client.beta.threads.create()
             self.threads[user_id] = thread.id
-            print(f"Nuevo thread creado para usuario {user_id}: {thread.id}")
+            logger.info(f"Nuevo thread creado para usuario {user_id}: {thread.id}")
         return self.threads[user_id]
 
 conversation_manager = ConversationManager()
@@ -43,20 +49,6 @@ def generate_response_internal(message, user_id):
     if not message or not user_id:
         return {'response': "No se proporcionó un mensaje o un ID de usuario válido."}
 
-    # Verificar si el mensaje solicita una búsqueda de propiedades
-    search_keywords = ["buscar", "propiedades", "alquiler", "comprar", "venta", 
-                      "departamento", "casa", "ph", "oficina", "local"]
-
-    if any(keyword in message.lower() for keyword in search_keywords):
-        try:
-            filters = extract_filters(message)
-            properties = search_properties(filters)
-            response_message = format_property_response(properties)
-            return {'response': response_message}
-        except Exception as e:
-            print(f"Error en la búsqueda de propiedades: {str(e)}")
-            return {'response': "Hubo un error al procesar la búsqueda de propiedades."}
-
     try:
         thread_id = conversation_manager.get_thread_id(user_id)
 
@@ -67,33 +59,77 @@ def generate_response_internal(message, user_id):
                 if not wait_for_run(thread_id, run.id):
                     return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
 
-        # Crear el nuevo mensaje
+        # Crear el nuevo mensaje del usuario
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=message
         )
 
+        # Crear y ejecutar el run
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
-            assistant_id=assistant_id
+            assistant_id=assistant_id,
+            instructions="""Eres un asistente inmobiliario profesional y amable. 
+            Antes de realizar una búsqueda de propiedades, debes recopilar la siguiente información del cliente:
+            1. Tipo de operación (alquiler/venta)
+            2. Tipo de propiedad (departamento, casa, etc.)
+            3. Ubicación o zona de interés
+            4. Presupuesto aproximado (opcional)
+            5. Cantidad de ambientes deseada (opcional)
+
+            Mantén una conversación natural y amigable. No realices búsquedas hasta tener al menos:
+            - Tipo de operación
+            - Tipo de propiedad
+            - Ubicación
+
+            Cuando tengas esta información, indica 'search_properties' junto con los filtros recopilados."""
         )
 
         if not wait_for_run(thread_id, run.id):
             return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
 
-        messages = client.beta.threads.messages.list(
-            thread_id=thread_id
-        )
-
+        # Verificar si el asistente solicitó una búsqueda
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
         for message in messages.data:
             if message.role == "assistant":
-                return {'response': message.content[0].text.value}
+                content = message.content[0].text.value
+                if "search_properties" in content:
+                    # Extraer el contexto de la conversación
+                    context = json.loads(content.split("search_properties")[1].strip())
+                    # Realizar la búsqueda
+                    filters = extract_filters(context)
+                    properties_data = search_properties(filters)
+
+                    # Añadir los resultados al thread
+                    if properties_data:
+                        client.beta.threads.messages.create(
+                            thread_id=thread_id,
+                            role="user",
+                            content=f"Resultados de la búsqueda: {json.dumps(properties_data, indent=2)}"
+                        )
+
+                        # Crear nuevo run para procesar los resultados
+                        run = client.beta.threads.runs.create(
+                            thread_id=thread_id,
+                            assistant_id=assistant_id
+                        )
+
+                        if not wait_for_run(thread_id, run.id):
+                            return {'response': "Error al procesar los resultados de la búsqueda."}
+
+                        # Obtener la respuesta final
+                        final_messages = client.beta.threads.messages.list(thread_id=thread_id)
+                        for final_message in final_messages.data:
+                            if final_message.role == "assistant":
+                                return {'response': final_message.content[0].text.value}
+
+                return {'response': content}
 
         return {'response': "No se pudo obtener una respuesta del asistente."}
 
     except Exception as e:
-        print(f"Error en generate_response_internal: {str(e)}")
+        logger.error(f"Error en generate_response_internal: {str(e)}")
         return {'response': f"Error al generar respuesta: {str(e)}"}
 
 @app.route('/generate-response', methods=['POST'])
@@ -107,7 +143,7 @@ def generate_response():
         return jsonify(response_data)
 
     except Exception as e:
-        print(f"Error en generate_response: {str(e)}")
+        logger.error(f"Error en generate_response: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/webhook', methods=['GET'])
@@ -118,7 +154,7 @@ def verify_webhook():
 
     if mode and token:
         if mode == 'subscribe' and token == os.getenv('FACEBOOK_VERIFY_TOKEN'):
-            print("Webhook verificado!")
+            logger.info("Webhook verificado!")
             return challenge
         else:
             return 'Forbidden', 403
