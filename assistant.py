@@ -55,14 +55,20 @@ def generate_response_internal(message, user_id):
 
         # Verificar si el mensaje solicita una búsqueda
         if any(word in message.lower() for word in ['buscar', 'encontrar', 'mostrar', 'ver', 'hay']):
-            properties_message = search_properties(message)
+            search_results = search_properties(message)
 
             # Enviar resultados al thread
             client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
-                content=f"Resultados de la búsqueda:\n\n{properties_message}"
+                content=f"Resultados de la búsqueda:\n\n{search_results['text']}"
             )
+
+            # Devolver tanto el texto como las imágenes
+            return {
+                'response': search_results['text'],
+                'images': search_results['images']
+            }
         else:
             # Enviar mensaje normal al thread
             client.beta.threads.messages.create(
@@ -71,20 +77,20 @@ def generate_response_internal(message, user_id):
                 content=message
             )
 
-        # Crear y ejecutar el run
-        run = client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=assistant_id
-        )
+            # Crear y ejecutar el run
+            run = client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=assistant_id
+            )
 
-        if not wait_for_run(thread_id, run.id):
-            return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
+            if not wait_for_run(thread_id, run.id):
+                return {'response': "Lo siento, hubo un error al procesar tu mensaje (timeout)."}
 
-        # Obtener la respuesta del asistente
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
-        for msg in messages.data:
-            if msg.role == "assistant":
-                return {'response': msg.content[0].text.value}
+            # Obtener la respuesta del asistente
+            messages = client.beta.threads.messages.list(thread_id=thread_id)
+            for msg in messages.data:
+                if msg.role == "assistant":
+                    return {'response': msg.content[0].text.value}
 
         return {'response': "No se pudo obtener una respuesta del asistente."}
 
@@ -100,7 +106,15 @@ def generate_response():
             return jsonify({'error': 'No message or sender_id provided'}), 400
 
         response_data = generate_response_internal(data['message'], data['sender_id'])
-        return jsonify(response_data)
+
+        # Si hay imágenes en la respuesta, incluirlas en la respuesta JSON
+        if isinstance(response_data, dict) and 'images' in response_data:
+            return jsonify({
+                'response': response_data['response'],
+                'images': response_data['images']
+            })
+
+        return jsonify({'response': response_data})
 
     except Exception as e:
         logger.error(f"Error en generate_response: {str(e)}")

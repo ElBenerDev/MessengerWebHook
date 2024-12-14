@@ -63,8 +63,17 @@ class PropertyDatabase:
                 for row in conn.execute("SELECT data FROM properties"):
                     prop = json.loads(row[0])
 
-                    # Verificar si la propiedad está activa
+                    # Verificar si la propiedad está activa y en alquiler
                     if prop.get('status') != 2 or prop.get('deleted_at'):
+                        continue
+
+                    is_for_rent = False
+                    for operation in prop.get('operations', []):
+                        if operation.get('operation_type') == 'Rent':
+                            is_for_rent = True
+                            break
+
+                    if not is_for_rent:
                         continue
 
                     # Buscar en el texto
@@ -99,14 +108,14 @@ class PropertyDatabase:
 
                         # Agregar información de precios
                         for operation in prop.get('operations', []):
-                            op_type = operation.get('operation_type')
-                            prices = operation.get('prices', [])
-                            if prices:
-                                formatted_prop['operations'].append({
-                                    'type': op_type,
-                                    'currency': prices[0].get('currency'),
-                                    'price': prices[0].get('price')
-                                })
+                            if operation.get('operation_type') == 'Rent':
+                                prices = operation.get('prices', [])
+                                if prices:
+                                    formatted_prop['operations'].append({
+                                        'type': 'Alquiler',
+                                        'currency': prices[0].get('currency'),
+                                        'price': prices[0].get('price')
+                                    })
 
                         properties.append(formatted_prop)
 
@@ -116,25 +125,29 @@ class PropertyDatabase:
             logger.error(f"Error buscando propiedades: {str(e)}")
             return []
 
-def format_property_message(properties: List[Dict]) -> str:
+def format_property_message(properties: List[Dict]) -> Dict:
     """Formatea las propiedades para mostrar en el mensaje"""
     if not properties:
-        return "No encontré propiedades que coincidan con tu búsqueda."
+        return {
+            'text': "No encontré propiedades que coincidan con tu búsqueda.",
+            'images': []
+        }
 
-    message = "Encontré las siguientes propiedades:\n\n"
+    message = "Encontré las siguientes propiedades en alquiler:\n\n"
+    images = []
 
     for i, prop in enumerate(properties, 1):
-        message += f"{i}. **{prop['title']}**\n"
+        message += f"*{i}. {prop['title']}*\n"
         if prop['location']:
-            message += f"   - **Ubicación**: {prop['location']}\n"
-        message += f"   - **Dirección**: {prop['address']}\n"
+            message += f"📍 *Ubicación*: {prop['location']}\n"
+        message += f"🏠 *Dirección*: {prop['address']}\n"
 
         # Agregar precios
         for operation in prop['operations']:
-            message += f"   - **{operation['type']}**: {operation['currency']} {operation['price']:,}\n"
+            message += f"💰 *{operation['type']}*: {operation['currency']} {operation['price']:,}\n"
 
         if prop['expenses']:
-            message += f"   - **Expensas**: ARS {prop['expenses']:,}\n"
+            message += f"📊 *Expensas*: ARS {prop['expenses']:,}\n"
 
         # Agregar detalles
         details = []
@@ -145,26 +158,27 @@ def format_property_message(properties: List[Dict]) -> str:
         if prop['surface']:
             details.append(f"{prop['surface']} m²")
         if details:
-            message += f"   - **Detalles**: {', '.join(details)}\n"
+            message += f"ℹ️ *Detalles*: {', '.join(details)}\n"
 
         # Agregar características
         if prop['features']:
-            message += f"   - **Características**: {', '.join(prop['features'])}\n"
+            message += f"✨ *Características*: {', '.join(prop['features'])}\n"
 
-        # Agregar link
-        message += f"   - **[Ver más detalles]({prop['url']})**\n"
+        # Agregar link directo
+        message += f"🔍 *Ver ficha completa*: {prop['url']}\n"
 
-        # Agregar fotos
+        # Recopilar imágenes
         if prop['photos']:
-            message += "   - **Fotos**:\n"
-            for photo in prop['photos']:
-                message += f"     ![Foto]({photo})\n"
+            images.extend(prop['photos'])
 
-        message += "\n"
+        message += "\n-------------------\n\n"
 
-    return message
+    return {
+        'text': message,
+        'images': images
+    }
 
-def search_properties(query: str = "") -> str:
+def search_properties(query: str = "") -> Dict:
     """Función principal para buscar y formatear propiedades"""
     db = PropertyDatabase()
 
