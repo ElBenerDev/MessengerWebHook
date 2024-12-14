@@ -125,16 +125,12 @@ class PropertyDatabase:
             logger.error(f"Error buscando propiedades: {str(e)}")
             return []
 
-def format_property_message(properties: List[Dict]) -> Dict:
-    """Formatea las propiedades para mostrar en el mensaje"""
+def format_property_message(properties: List[Dict]) -> str:
+    """Formatea las propiedades para mostrar en el mensaje de WhatsApp"""
     if not properties:
-        return {
-            'text': "No encontré propiedades que coincidan con tu búsqueda.",
-            'images': []
-        }
+        return "No encontré propiedades que coincidan con tu búsqueda."
 
     message = "Encontré las siguientes propiedades en alquiler:\n\n"
-    images = []
 
     for i, prop in enumerate(properties, 1):
         message += f"*{i}. {prop['title']}*\n"
@@ -167,16 +163,14 @@ def format_property_message(properties: List[Dict]) -> Dict:
         # Agregar link directo
         message += f"🔍 *Ver ficha completa*: {prop['url']}\n"
 
-        # Recopilar imágenes
+        # Indicar que hay fotos disponibles
         if prop['photos']:
-            images.extend(prop['photos'])
+            for photo_url in prop['photos']:
+                message += f"{photo_url}\n"
 
         message += "\n-------------------\n\n"
 
-    return {
-        'text': message,
-        'images': images
-    }
+    return message
 
 def search_properties(query: str = "") -> Dict:
     """Función principal para buscar y formatear propiedades"""
