@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional, Any
+# tokko_search.py
+from typing import Dict, List, Optional
 import requests
 import json
 import logging
@@ -28,52 +29,77 @@ class Property:
 class PropertyManager:
     def __init__(self):
         self.api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
-        self.api_url = "https://www.tokkobroker.com/api/v1/property/"
+        self.api_url = "https://www.tokkobroker.com/api/v1/property/search"
 
-    def fetch_properties(self, operation_type: str = None) -> List[Dict]:
-        """Obtiene propiedades filtradas por tipo de operación"""
+    def search_properties(self, operation_type: str = None) -> List[Dict]:
+        """
+        Búsqueda de propiedades usando el endpoint específico de búsqueda
+        """
+        search_data = {
+            "current_localization_id": [25034],  # Villa Ballester
+            "current_localization_type": "division",
+            "operation_types": [2] if operation_type.lower() == "alquiler" else [1],  # 2=alquiler, 1=venta
+            "property_types": [2, 13],  # 2=Departamento, 13=PH
+            "status": ["ACTIVE"],
+            "filters": [
+                ["status", "=", 2],  # Solo propiedades activas
+                ["deleted_at", "=", None]  # No eliminadas
+            ]
+        }
+
+        params = {
+            "key": self.api_key,
+            "lang": "es",
+            "limit": 50
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+
         try:
-            params = {
-                'key': self.api_key,
-                'limit': 50,  # Aumentamos el límite para obtener más resultados
-                'status': 2,  # Solo propiedades activas
-            }
+            response = requests.post(
+                self.api_url,
+                params=params,
+                json=search_data,
+                headers=headers
+            )
 
-            if operation_type:
-                params['operation_type'] = 'rent' if operation_type.lower() == 'alquiler' else 'sale'
+            logger.info(f"URL: {response.url}")
+            logger.info(f"Request Body: {json.dumps(search_data, indent=2)}")
+            logger.info(f"Response Status: {response.status_code}")
 
-            response = requests.get(self.api_url, params=params)
-            response.raise_for_status()
+            if response.status_code != 200:
+                logger.error(f"Error Response: {response.text}")
+                return []
+
             return response.json().get('objects', [])
+
         except Exception as e:
-            logger.error(f"Error fetching properties: {str(e)}")
+            logger.error(f"Error en búsqueda: {str(e)}")
             return []
 
-    def process_properties(self, operation_type: str = None) -> List[Property]:
-        """Procesa y filtra las propiedades"""
-        properties = []
-        raw_properties = self.fetch_properties(operation_type)
+    def process_properties(self, raw_properties: List[Dict], operation_type: str) -> List[Property]:
+        """
+        Procesa las propiedades devueltas por la API
+        """
+        processed_properties = []
 
         for prop in raw_properties:
-            # Verificar si la propiedad está activa y no eliminada
-            if prop.get('status') != 2 or prop.get('deleted_at'):
-                continue
-
-            # Obtener operaciones
+            # Verificar operaciones
             operations = prop.get('operations', [])
             if not operations:
                 continue
 
-            # Filtrar por tipo de operación
+            # Encontrar la operación correcta
             operation = None
             for op in operations:
                 op_type = op.get('operation_type', '').lower()
-                if operation_type:
-                    if (operation_type.lower() == 'alquiler' and op_type == 'rent') or \
-                       (operation_type.lower() == 'venta' and op_type == 'sale'):
-                        operation = op
-                        break
-                else:
+                if operation_type.lower() == 'alquiler' and op_type == 'rent':
+                    operation = op
+                    break
+                elif operation_type.lower() == 'venta' and op_type == 'sale':
                     operation = op
                     break
 
@@ -82,18 +108,15 @@ class PropertyManager:
 
             # Procesar precio
             price_info = operation['prices'][0]
-            price = price_info.get('price', 0)
-            currency = price_info.get('currency', '')
 
-            # Crear objeto Property
-            property = Property(
+            processed_properties.append(Property(
                 id=str(prop.get('id', '')),
                 title=prop.get('publication_title', ''),
                 type=prop.get('type', {}).get('name', ''),
                 address=prop.get('fake_address', ''),
                 location=prop.get('location', {}).get('name', ''),
-                price=price,
-                currency=currency,
+                price=price_info.get('price', 0),
+                currency=price_info.get('currency', ''),
                 operation_type='Alquiler' if operation['operation_type'].lower() == 'rent' else 'Venta',
                 rooms=prop.get('room_amount', 0),
                 bathrooms=prop.get('bathroom_amount', 0),
@@ -102,21 +125,20 @@ class PropertyManager:
                 photos=[p['image'] for p in prop.get('photos', [])[:3] if p.get('image')],
                 url=f"https://ficha.info/p/{prop.get('public_url', '').strip()}",
                 description=prop.get('description', '')
-            )
+            ))
 
-            properties.append(property)
-
-        return properties
+        return processed_properties
 
 def format_property_message(properties: List[Property]) -> str:
-    """Formatea las propiedades para WhatsApp"""
+    """
+    Formatea las propiedades para WhatsApp
+    """
     if not properties:
         return "No encontré propiedades que coincidan con tu búsqueda."
 
     message = "Encontré las siguientes propiedades:\n\n"
 
-    for i, prop in enumerate(properties[:5], 1):  # Limitamos a 5 propiedades
-        # Formatear precio
+    for i, prop in enumerate(properties[:5], 1):
         price_str = f"{prop.currency} {prop.price:,.0f}" if prop.price > 0 else "Consultar precio"
 
         message += f"*{i}. {prop.title}*\n"
@@ -134,14 +156,15 @@ def format_property_message(properties: List[Property]) -> str:
 
         message += f"🔍 Ver más detalles: {prop.url}\n\n"
 
-        # Agregar primera foto si existe
         if prop.photos:
             message += f"{prop.photos[0]}\n\n"
 
     return message
 
 def search_properties(query: str) -> str:
-    """Función principal de búsqueda"""
+    """
+    Función principal de búsqueda
+    """
     manager = PropertyManager()
 
     # Determinar tipo de operación
@@ -151,11 +174,11 @@ def search_properties(query: str) -> str:
     elif any(word in query.lower() for word in ['venta', 'comprar', 'compra']):
         operation_type = 'Venta'
 
-    # Obtener y filtrar propiedades
-    properties = manager.process_properties(operation_type)
+    if not operation_type:
+        return "Por favor, especifica si buscas propiedades en alquiler o venta."
 
-    # Filtrar por ubicación si se especifica
-    if 'ballester' in query.lower():
-        properties = [p for p in properties if 'ballester' in p.location.lower()]
+    # Realizar búsqueda
+    raw_properties = manager.search_properties(operation_type)
+    properties = manager.process_properties(raw_properties, operation_type)
 
     return format_property_message(properties)
