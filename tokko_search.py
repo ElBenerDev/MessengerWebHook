@@ -1,186 +1,182 @@
-from typing import Dict, List, Optional, Any, Union
-import sqlite3
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
 import requests
 import json
-from datetime import datetime
 import logging
-import re
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class PropertyDatabase:
-    def __init__(self, db_path="properties_cache.db"):
-        self.db_path = db_path
-        self.init_db()
+@dataclass
+class Property:
+    id: str
+    title: str
+    type: str
+    address: str
+    location: str
+    price: float
+    currency: str
+    operation_type: str
+    rooms: int
+    bathrooms: int
+    surface: float
+    expenses: float
+    features: List[str]
+    photos: List[str]
+    url: str
+    description: str
+    status: int
 
-    def init_db(self):
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS properties (
-                    id INTEGER PRIMARY KEY,
-                    data JSON,
-                    last_updated TIMESTAMP
-                )
-            """)
-            conn.commit()
+class PropertyManager:
+    def __init__(self):
+        self.api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
+        self.api_url = "https://www.tokkobroker.com/api/v1/property/"
+        self.properties = []
+        self.last_update = None
 
-    def update_properties(self):
-        """Actualiza la base de datos con datos de la API"""
-        api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
-        url = f"https://www.tokkobroker.com/api/v1/property/?key={api_key}"
-
+    def fetch_properties(self) -> List[Dict]:
+        """Obtiene todas las propiedades de la API"""
         try:
-            response = requests.get(url)
+            params = {
+                'limit': 0,
+                'key': self.api_key
+            }
+            response = requests.get(self.api_url, params=params)
             response.raise_for_status()
-            properties = response.json().get('objects', [])
-
-            with sqlite3.connect(self.db_path) as conn:
-                # Limpiar tabla existente
-                conn.execute("DELETE FROM properties")
-
-                # Insertar nuevos datos
-                for prop in properties:
-                    conn.execute(
-                        "INSERT INTO properties (id, data, last_updated) VALUES (?, ?, ?)",
-                        (prop.get('id'), json.dumps(prop), datetime.now().isoformat())
-                    )
-                conn.commit()
-
-            logger.info(f"Base de datos actualizada con {len(properties)} propiedades")
-            return True
+            return response.json().get('objects', [])
         except Exception as e:
-            logger.error(f"Error actualizando propiedades: {str(e)}")
-            return False
-
-    def search_properties(self, query: str = "") -> List[Dict]:
-        """
-        Busca propiedades según el texto de búsqueda
-        """
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                properties = []
-                for row in conn.execute("SELECT data FROM properties"):
-                    prop = json.loads(row[0])
-
-                    # Verificar si la propiedad está activa y en alquiler
-                    if prop.get('status') != 2 or prop.get('deleted_at'):
-                        continue
-
-                    is_for_rent = False
-                    for operation in prop.get('operations', []):
-                        if operation.get('operation_type') == 'Rent':
-                            is_for_rent = True
-                            break
-
-                    if not is_for_rent:
-                        continue
-
-                    # Buscar en el texto
-                    searchable_text = f"{prop.get('publication_title', '')} {prop.get('description', '')} {prop.get('location', {}).get('name', '')}".lower()
-
-                    if not query or query.lower() in searchable_text:
-                        # Formatear la propiedad para la respuesta
-                        formatted_prop = {
-                            'id': prop.get('id'),
-                            'title': prop.get('publication_title'),
-                            'type': prop.get('type', {}).get('name'),
-                            'address': prop.get('fake_address'),
-                            'location': prop.get('location', {}).get('name'),
-                            'rooms': prop.get('room_amount'),
-                            'bathrooms': prop.get('bathroom_amount'),
-                            'surface': prop.get('total_surface'),
-                            'expenses': prop.get('expenses'),
-                            'description': prop.get('description'),
-                            'url': f"https://ficha.info/p/{prop.get('token')}",
-                            'photos': [
-                                photo.get('image')
-                                for photo in prop.get('photos', [])[:3]
-                                if photo.get('image')
-                            ],
-                            'features': [
-                                tag.get('name')
-                                for tag in prop.get('tags', [])
-                                if tag.get('name')
-                            ],
-                            'operations': []
-                        }
-
-                        # Agregar información de precios
-                        for operation in prop.get('operations', []):
-                            if operation.get('operation_type') == 'Rent':
-                                prices = operation.get('prices', [])
-                                if prices:
-                                    formatted_prop['operations'].append({
-                                        'type': 'Alquiler',
-                                        'currency': prices[0].get('currency'),
-                                        'price': prices[0].get('price')
-                                    })
-
-                        properties.append(formatted_prop)
-
-                return properties
-
-        except Exception as e:
-            logger.error(f"Error buscando propiedades: {str(e)}")
+            logger.error(f"Error fetching properties: {str(e)}")
             return []
 
-def format_property_message(properties: List[Dict]) -> str:
-    """Formatea las propiedades para mostrar en el mensaje"""
+    def process_properties(self) -> List[Property]:
+        """Procesa las propiedades y las convierte en objetos Property"""
+        raw_properties = self.fetch_properties()
+        processed_properties = []
+
+        for prop in raw_properties:
+            # Solo procesar propiedades activas
+            if prop.get('status') != 2 or prop.get('deleted_at'):
+                continue
+
+            # Extraer información de precio y operación
+            price_info = self._extract_price_info(prop.get('operations', []))
+            if not price_info:
+                continue
+
+            processed_properties.append(Property(
+                id=prop.get('id', ''),
+                title=prop.get('publication_title', ''),
+                type=prop.get('type', {}).get('name', ''),
+                address=prop.get('fake_address', ''),
+                location=prop.get('location', {}).get('name', ''),
+                price=price_info['price'],
+                currency=price_info['currency'],
+                operation_type=price_info['operation_type'],
+                rooms=prop.get('room_amount', 0),
+                bathrooms=prop.get('bathroom_amount', 0),
+                surface=float(prop.get('total_surface', 0)),
+                expenses=float(prop.get('expenses', 0)),
+                features=[tag.get('name') for tag in prop.get('tags', []) if tag.get('name')],
+                photos=[photo.get('image') for photo in prop.get('photos', [])[:3] if photo.get('image')],
+                url=prop.get('public_url', ''),
+                description=prop.get('description', ''),
+                status=prop.get('status', 0)
+            ))
+
+        self.properties = processed_properties
+        self.last_update = datetime.now()
+        return processed_properties
+
+    def _extract_price_info(self, operations: List[Dict]) -> Optional[Dict]:
+        """Extrae información de precio y tipo de operación"""
+        if not operations:
+            return None
+
+        operation = operations[0]
+        prices = operation.get('prices', [])
+        if not prices:
+            return None
+
+        return {
+            'price': prices[0].get('price', 0),
+            'currency': prices[0].get('currency', ''),
+            'operation_type': 'Alquiler' if operation.get('operation_type') == 'Rent' else 'Venta'
+        }
+
+    def search_properties(self, filters: Dict = None) -> List[Property]:
+        """Busca propiedades según los filtros especificados"""
+        if not self.properties or not self.last_update:
+            self.process_properties()
+
+        filtered_props = self.properties
+
+        if filters:
+            if 'operation_type' in filters:
+                filtered_props = [p for p in filtered_props if p.operation_type.lower() == filters['operation_type'].lower()]
+
+            if 'min_price' in filters:
+                filtered_props = [p for p in filtered_props if p.price >= filters['min_price']]
+
+            if 'max_price' in filters:
+                filtered_props = [p for p in filtered_props if p.price <= filters['max_price']]
+
+            if 'location' in filters:
+                filtered_props = [p for p in filtered_props if filters['location'].lower() in p.location.lower()]
+
+            if 'rooms' in filters:
+                filtered_props = [p for p in filtered_props if p.rooms >= filters['rooms']]
+
+        return filtered_props
+
+def format_property_message(properties: List[Property]) -> str:
+    """Formatea las propiedades para el mensaje de WhatsApp"""
     if not properties:
         return "No encontré propiedades que coincidan con tu búsqueda."
 
-    message = "Encontré las siguientes propiedades en alquiler:\n\n"
+    message = "Encontré las siguientes propiedades:\n\n"
 
     for i, prop in enumerate(properties, 1):
-        message += f"*{i}. {prop['title']}*\n"
-        if prop['location']:
-            message += f"📍 *Ubicación*: {prop['location']}\n"
-        message += f"🏠 *Dirección*: {prop['address']}\n"
+        message += f"*{i}. {prop.title}*\n"
+        message += f"📍 *Ubicación*: {prop.location}\n"
+        message += f"🏠 *Dirección*: {prop.address}\n"
+        message += f"💰 *{prop.operation_type}*: {prop.currency} {prop.price:,}\n"
 
-        # Agregar precios
-        for operation in prop['operations']:
-            message += f"💰 *{operation['type']}*: {operation['currency']} {operation['price']:,}\n"
+        if prop.expenses > 0:
+            message += f"📊 *Expensas*: ARS {prop.expenses:,}\n"
 
-        if prop['expenses']:
-            message += f"📊 *Expensas*: ARS {prop['expenses']:,}\n"
-
-        # Agregar detalles
         details = []
-        if prop['rooms']:
-            details.append(f"{prop['rooms']} ambientes")
-        if prop['bathrooms']:
-            details.append(f"{prop['bathrooms']} baños")
-        if prop['surface']:
-            details.append(f"{prop['surface']} m²")
+        if prop.rooms:
+            details.append(f"{prop.rooms} ambientes")
+        if prop.bathrooms:
+            details.append(f"{prop.bathrooms} baños")
+        if prop.surface:
+            details.append(f"{prop.surface} m²")
+
         if details:
             message += f"ℹ️ *Detalles*: {', '.join(details)}\n"
 
-        # Agregar características
-        if prop['features']:
-            message += f"✨ *Características*: {', '.join(prop['features'])}\n"
+        if prop.features:
+            message += f"✨ *Características*: {', '.join(prop.features)}\n"
 
-        # Agregar link directo
-        message += f"🔍 *Ver ficha completa*: {prop['url']}\n"
-
-        # Agregar fotos
-        if prop['photos']:
-            for photo_url in prop['photos']:
-                message += f"{photo_url}\n"
-
-        message += "\n-------------------\n\n"
+        message += f"🔍 *Ver más*: {prop.url}\n\n"
+        message += "-------------------\n\n"
 
     return message
 
-def search_properties(query: str = "") -> str:
-    """Función principal para buscar y formatear propiedades"""
-    db = PropertyDatabase()
+def search_properties(query: str) -> str:
+    """Función principal para buscar propiedades"""
+    manager = PropertyManager()
 
-    # Actualizar base de datos
-    db.update_properties()
+    # Extraer filtros del query
+    filters = {}
+    if 'alquiler' in query.lower():
+        filters['operation_type'] = 'Alquiler'
+    if 'venta' in query.lower():
+        filters['operation_type'] = 'Venta'
 
-    # Realizar búsqueda
-    properties = db.search_properties(query)
+    # Buscar propiedades
+    properties = manager.search_properties(filters)
 
-    # Formatear resultados
+    # Formatear respuesta
     return format_property_message(properties)
