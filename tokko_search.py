@@ -35,34 +35,28 @@ class PropertyManager:
         """
         Búsqueda de propiedades usando el endpoint específico de búsqueda
         """
-        # Construir el payload según la estructura correcta de la API
         search_data = {
             "data": {
                 "current_localization_id": "25034",  # Villa Ballester
                 "current_localization_type": "division",
-                "operation_types": ["2"] if operation_type.lower() == "alquiler" else ["1"],
+                "operation_types": ["2"],  # 2 = Alquiler
                 "property_types": ["2", "13"],  # Departamentos y PH
-                "status": ["ACTIVE"],
-                "currency": "ARS" if operation_type.lower() == "alquiler" else "USD",
+                "filters": [
+                    ["status", "=", "2"],  # Activa
+                    ["deleted_at", "=", None],  # No eliminada
+                    ["web_price", "=", True],  # Disponible al público
+                ],
                 "order_by": "price",
                 "order": "ASC"
             }
         }
 
-        params = {
-            "key": self.api_key
-        }
-
-        headers = {
-            "Content-Type": "application/json"
-        }
-
         try:
             response = requests.post(
                 self.api_url,
-                params=params,
+                params={"key": self.api_key},
                 json=search_data,
-                headers=headers
+                headers={"Content-Type": "application/json"}
             )
 
             logger.info(f"URL: {response.url}")
@@ -74,7 +68,26 @@ class PropertyManager:
                 return []
 
             data = response.json()
-            return data.get('objects', [])
+            properties = []
+
+            # Filtrar solo propiedades que realmente están en alquiler
+            for prop in data.get('objects', []):
+                if not prop.get('operations'):
+                    continue
+
+                # Verificar que tenga operación de alquiler activa
+                has_active_rent = False
+                for op in prop.get('operations', []):
+                    if (op.get('operation_type') == 'Rent' and 
+                        op.get('prices') and 
+                        op['prices'][0].get('price') > 0):
+                        has_active_rent = True
+                        break
+
+                if has_active_rent:
+                    properties.append(prop)
+
+            return properties
 
         except Exception as e:
             logger.error(f"Error en búsqueda: {str(e)}")
@@ -92,11 +105,7 @@ class PropertyManager:
             # Encontrar la operación correcta
             operation = None
             for op in operations:
-                op_type = op.get('operation_type', '').lower()
-                if operation_type.lower() == 'alquiler' and op_type == 'rent':
-                    operation = op
-                    break
-                elif operation_type.lower() == 'venta' and op_type == 'sale':
+                if op.get('operation_type') == 'Rent' and operation_type.lower() == 'alquiler':
                     operation = op
                     break
 
@@ -104,6 +113,10 @@ class PropertyManager:
                 continue
 
             price_info = operation['prices'][0]
+
+            # Solo procesar si tiene precio y está disponible al público
+            if not price_info.get('price') or not prop.get('web_price'):
+                continue
 
             processed_properties.append(Property(
                 id=str(prop.get('id', '')),
@@ -113,7 +126,7 @@ class PropertyManager:
                 location=prop.get('location', {}).get('name', ''),
                 price=price_info.get('price', 0),
                 currency=price_info.get('currency', ''),
-                operation_type=operation_type,
+                operation_type='Alquiler',
                 rooms=prop.get('room_amount', 0),
                 bathrooms=prop.get('bathroom_amount', 0),
                 surface=float(prop.get('total_surface', 0)),
@@ -127,22 +140,22 @@ class PropertyManager:
 
 def format_property_message(properties: List[Property]) -> str:
     if not properties:
-        return "No encontré propiedades que coincidan con tu búsqueda."
+        return "No encontré propiedades en alquiler disponibles en Villa Ballester en este momento. ¿Te gustaría que busque en otras zonas cercanas?"
 
-    message = "Encontré las siguientes propiedades:\n\n"
+    message = "Encontré las siguientes propiedades en alquiler en Villa Ballester:\n\n"
 
     for i, prop in enumerate(properties[:5], 1):
         price_str = f"{prop.currency} {prop.price:,.0f}" if prop.price > 0 else "Consultar precio"
 
         message += f"*{i}. {prop.title}*\n"
         message += f"📍 {prop.address}\n"
-        message += f"💰 {prop.operation_type}: {price_str}\n"
+        message += f"💰 Alquiler: {price_str}\n"
 
         if prop.expenses > 0:
             message += f"💵 Expensas: ${prop.expenses:,.0f}\n"
 
         if prop.rooms > 0:
-            message += f"🏠 {prop.rooms} ambientes\n"
+            message += f"🏠 {prop.rooms} ambiente{'s' if prop.rooms > 1 else ''}\n"
 
         if prop.surface > 0:
             message += f"📐 {prop.surface:.0f}m²\n"
@@ -152,14 +165,12 @@ def format_property_message(properties: List[Property]) -> str:
         if prop.photos:
             message += f"{prop.photos[0]}\n\n"
 
+    message += "¿Te gustaría ver más detalles de alguna de estas propiedades?"
+
     return message
 
 def search_properties(query: str) -> str:
     manager = PropertyManager()
-
-    operation_type = 'Alquiler' if any(word in query.lower() for word in ['alquiler', 'alquilar', 'renta', 'rentar']) else 'Venta'
-
-    raw_properties = manager.search_properties(operation_type)
-    properties = manager.process_properties(raw_properties, operation_type)
-
+    raw_properties = manager.search_properties('Alquiler')
+    properties = manager.process_properties(raw_properties, 'Alquiler')
     return format_property_message(properties)

@@ -32,7 +32,8 @@ class ConversationManager:
                 "operation_type": None,
                 "property_type": None,
                 "price_range": None,
-                "last_search_time": None
+                "last_search_time": None,
+                "search_attempted": False
             }
         return self.threads[user_id]
 
@@ -48,21 +49,29 @@ class ConversationManager:
     def update_context(self, user_id: str, key: str, value: str):
         if user_id in self.contexts:
             self.contexts[user_id][key] = value
+            if key == 'operation_type':
+                self.contexts[user_id]['search_attempted'] = False
 
     def get_context(self, user_id: str) -> Dict:
         return self.contexts.get(user_id, {})
 
     def should_search(self, user_id: str, message: str) -> bool:
         context = self.get_context(user_id)
-        search_keywords = ['buscar', 'encontrar', 'mostrar', 'ver', 'hay', 'alquiler', 'venta']
+        if context.get('search_attempted'):
+            return False
 
-        # Verificar si el mensaje contiene palabras clave de búsqueda
+        search_keywords = ['buscar', 'encontrar', 'mostrar', 'ver', 'hay', 'alquiler', 'venta', 'departamento', 'depto']
+        location_keywords = ['ballester', 'villa ballester']
+
+        # Verificar si el mensaje contiene palabras clave de búsqueda y ubicación
         has_search_intent = any(word in message.lower() for word in search_keywords)
+        has_location = any(word in message.lower() for word in location_keywords)
 
-        # Verificar si tenemos suficiente contexto para realizar una búsqueda
-        has_operation_type = context.get('operation_type') is not None
+        if has_search_intent and has_location:
+            context['search_attempted'] = True
+            return True
 
-        return has_search_intent and has_operation_type
+        return False
 
 conversation_manager = ConversationManager()
 
@@ -103,11 +112,9 @@ def update_context_from_message(message: str, user_id: str):
     elif any(word in message.lower() for word in ['venta', 'comprar', 'compra']):
         conversation_manager.update_context(user_id, 'operation_type', 'Venta')
 
-    # Detectar ubicación (ejemplo básico)
-    locations = ['ballester', 'villa ballester', 'san martin']
-    for location in locations:
-        if location in message.lower():
-            conversation_manager.update_context(user_id, 'location', location)
+    # Detectar ubicación
+    if any(word in message.lower() for word in ['ballester', 'villa ballester']):
+        conversation_manager.update_context(user_id, 'location', 'Villa Ballester')
 
 def generate_response_internal(message: str, user_id: str) -> str:
     try:
@@ -115,6 +122,18 @@ def generate_response_internal(message: str, user_id: str) -> str:
 
         # Actualizar contexto basado en el mensaje
         update_context_from_message(message, user_id)
+
+        # Verificar si debemos realizar una búsqueda
+        if conversation_manager.should_search(user_id, message):
+            search_results = search_properties(message)
+            if search_results:
+                # Agregar los resultados al contexto de la conversación
+                client.beta.threads.messages.create(
+                    thread_id=thread_id,
+                    role="user",
+                    content=f"Resultados de búsqueda: {search_results}"
+                )
+                return search_results
 
         if conversation_manager.is_run_active(user_id):
             return "Por favor, espera mientras proceso tu mensaje anterior."
@@ -137,15 +156,6 @@ def generate_response_internal(message: str, user_id: str) -> str:
         # Esperar la respuesta
         if not wait_for_run(thread_id, run.id, user_id):
             return "Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta de nuevo."
-
-        # Verificar si debemos realizar una búsqueda
-        if conversation_manager.should_search(user_id, message):
-            context = conversation_manager.get_context(user_id)
-            operation_type = context.get('operation_type')
-            if operation_type:
-                search_results = search_properties(message)
-                if search_results:
-                    return search_results
 
         # Obtener la respuesta del asistente
         messages = client.beta.threads.messages.list(thread_id=thread_id)
