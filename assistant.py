@@ -39,8 +39,7 @@ class ConversationManager:
 
 conversation_manager = ConversationManager()
 
-def wait_for_run(thread_id: str, run_id: str, user_id: str, max_attempts: int = 30) -> bool:
-    """Espera a que el run se complete con un número máximo de intentos"""
+def wait_for_run(thread_id: str, run_id: str, user_id: str, max_attempts: int = 60) -> bool:
     attempts = 0
     while attempts < max_attempts:
         try:
@@ -68,34 +67,18 @@ def wait_for_run(thread_id: str, run_id: str, user_id: str, max_attempts: int = 
     return False
 
 def generate_response_internal(message: str, user_id: str) -> str:
-    """Genera una respuesta usando el asistente de OpenAI"""
-    if not message or not user_id:
-        return "No se proporcionó un mensaje o un ID de usuario válido."
-
     try:
         thread_id = conversation_manager.get_thread_id(user_id)
 
-        # Verificar si hay un run activo
         if conversation_manager.is_run_active(user_id):
             return "Por favor, espera mientras proceso tu mensaje anterior."
 
-        # Verificar si el mensaje solicita una búsqueda
-        if any(word in message.lower() for word in ['buscar', 'encontrar', 'mostrar', 'ver', 'hay', 'alquiler', 'venta']):
-            search_results = search_properties(message)
-
-            # Enviar resultados al thread
-            client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=f"Búsqueda de propiedades: {message}\n\nResultados:\n{search_results}"
-            )
-        else:
-            # Enviar mensaje normal al thread
-            client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=message
-            )
+        # Agregar el mensaje del usuario al thread
+        client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=message
+        )
 
         # Crear y ejecutar el run
         run = client.beta.threads.runs.create(
@@ -103,11 +86,17 @@ def generate_response_internal(message: str, user_id: str) -> str:
             assistant_id=assistant_id
         )
 
-        # Registrar el run activo
         conversation_manager.set_active_run(user_id, run.id)
 
+        # Esperar la respuesta
         if not wait_for_run(thread_id, run.id, user_id):
             return "Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta de nuevo."
+
+        # Si el mensaje parece ser una búsqueda de propiedades
+        if any(word in message.lower() for word in ['buscar', 'encontrar', 'mostrar', 'ver', 'hay', 'alquiler', 'venta']):
+            search_results = search_properties(message)
+            if search_results:
+                return search_results
 
         # Obtener la respuesta del asistente
         messages = client.beta.threads.messages.list(thread_id=thread_id)
@@ -124,7 +113,6 @@ def generate_response_internal(message: str, user_id: str) -> str:
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
-    """Endpoint para generar respuestas"""
     try:
         data = request.json
         if not data or 'message' not in data or 'sender_id' not in data:
