@@ -35,27 +35,26 @@ class PropertyManager:
         """
         Búsqueda de propiedades usando el endpoint específico de búsqueda
         """
+        # Construir el payload según la estructura correcta de la API
         search_data = {
-            "current_localization_id": [25034],  # Villa Ballester
-            "current_localization_type": "division",
-            "operation_types": [2] if operation_type.lower() == "alquiler" else [1],  # 2=alquiler, 1=venta
-            "property_types": [2, 13],  # 2=Departamento, 13=PH
-            "status": ["ACTIVE"],
-            "filters": [
-                ["status", "=", 2],  # Solo propiedades activas
-                ["deleted_at", "=", None]  # No eliminadas
-            ]
+            "data": {
+                "current_localization_id": "25034",  # Villa Ballester
+                "current_localization_type": "division",
+                "operation_types": ["2"] if operation_type.lower() == "alquiler" else ["1"],
+                "property_types": ["2", "13"],  # Departamentos y PH
+                "status": ["ACTIVE"],
+                "currency": "ARS" if operation_type.lower() == "alquiler" else "USD",
+                "order_by": "price",
+                "order": "ASC"
+            }
         }
 
         params = {
-            "key": self.api_key,
-            "lang": "es",
-            "limit": 50
+            "key": self.api_key
         }
 
         headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
+            "Content-Type": "application/json"
         }
 
         try:
@@ -74,16 +73,14 @@ class PropertyManager:
                 logger.error(f"Error Response: {response.text}")
                 return []
 
-            return response.json().get('objects', [])
+            data = response.json()
+            return data.get('objects', [])
 
         except Exception as e:
             logger.error(f"Error en búsqueda: {str(e)}")
             return []
 
     def process_properties(self, raw_properties: List[Dict], operation_type: str) -> List[Property]:
-        """
-        Procesa las propiedades devueltas por la API
-        """
         processed_properties = []
 
         for prop in raw_properties:
@@ -106,7 +103,6 @@ class PropertyManager:
             if not operation or not operation.get('prices'):
                 continue
 
-            # Procesar precio
             price_info = operation['prices'][0]
 
             processed_properties.append(Property(
@@ -117,7 +113,7 @@ class PropertyManager:
                 location=prop.get('location', {}).get('name', ''),
                 price=price_info.get('price', 0),
                 currency=price_info.get('currency', ''),
-                operation_type='Alquiler' if operation['operation_type'].lower() == 'rent' else 'Venta',
+                operation_type=operation_type,
                 rooms=prop.get('room_amount', 0),
                 bathrooms=prop.get('bathroom_amount', 0),
                 surface=float(prop.get('total_surface', 0)),
@@ -130,9 +126,6 @@ class PropertyManager:
         return processed_properties
 
 def format_property_message(properties: List[Property]) -> str:
-    """
-    Formatea las propiedades para WhatsApp
-    """
     if not properties:
         return "No encontré propiedades que coincidan con tu búsqueda."
 
@@ -162,22 +155,10 @@ def format_property_message(properties: List[Property]) -> str:
     return message
 
 def search_properties(query: str) -> str:
-    """
-    Función principal de búsqueda
-    """
     manager = PropertyManager()
 
-    # Determinar tipo de operación
-    operation_type = None
-    if any(word in query.lower() for word in ['alquiler', 'alquilar', 'renta', 'rentar']):
-        operation_type = 'Alquiler'
-    elif any(word in query.lower() for word in ['venta', 'comprar', 'compra']):
-        operation_type = 'Venta'
+    operation_type = 'Alquiler' if any(word in query.lower() for word in ['alquiler', 'alquilar', 'renta', 'rentar']) else 'Venta'
 
-    if not operation_type:
-        return "Por favor, especifica si buscas propiedades en alquiler o venta."
-
-    # Realizar búsqueda
     raw_properties = manager.search_properties(operation_type)
     properties = manager.process_properties(raw_properties, operation_type)
 
