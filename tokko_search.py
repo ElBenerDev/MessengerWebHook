@@ -1,4 +1,3 @@
-# tokko_search.py
 from typing import Dict, List, Optional
 import requests
 import json
@@ -31,16 +30,22 @@ class PropertyManager:
         self.api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
         self.api_url = "https://www.tokkobroker.com/api/v1/property/search"
 
-    def search_properties(self, operation_type: str = None) -> List[Dict]:
+    def search_properties(self, 
+                         location_id: str = "25034",
+                         operation_type: List[str] = None,
+                         property_types: List[str] = None,
+                         price_from: Optional[float] = None,
+                         price_to: Optional[float] = None,
+                         rooms: Optional[int] = None) -> List[Dict]:
         """
-        Búsqueda de propiedades usando el endpoint específico de búsqueda
+        Búsqueda flexible de propiedades
         """
         search_data = {
             "data": {
-                "current_localization_id": "25034",  # Villa Ballester
+                "current_localization_id": location_id,
                 "current_localization_type": "division",
-                "operation_types": ["2"],  # 2 = Alquiler
-                "property_types": ["2", "13"],  # Departamentos y PH
+                "operation_types": operation_type or ["2"],  # 2 = Alquiler por defecto
+                "property_types": property_types or ["2", "13"],  # Departamentos y PH por defecto
                 "filters": [
                     ["status", "=", "2"],  # Activa
                     ["deleted_at", "=", None],  # No eliminada
@@ -50,6 +55,14 @@ class PropertyManager:
                 "order": "ASC"
             }
         }
+
+        # Agregar filtros opcionales
+        if rooms:
+            search_data["data"]["filters"].append(["room_amount", "=", str(rooms)])
+        if price_from:
+            search_data["data"]["price_from"] = price_from
+        if price_to:
+            search_data["data"]["price_to"] = price_to
 
         try:
             response = requests.post(
@@ -68,32 +81,31 @@ class PropertyManager:
                 return []
 
             data = response.json()
-            properties = []
-
-            # Filtrar solo propiedades que realmente están en alquiler
-            for prop in data.get('objects', []):
-                if not prop.get('operations'):
-                    continue
-
-                # Verificar que tenga operación de alquiler activa
-                has_active_rent = False
-                for op in prop.get('operations', []):
-                    if (op.get('operation_type') == 'Rent' and 
-                        op.get('prices') and 
-                        op['prices'][0].get('price') > 0):
-                        has_active_rent = True
-                        break
-
-                if has_active_rent:
-                    properties.append(prop)
-
-            return properties
+            return self.filter_valid_properties(data.get('objects', []))
 
         except Exception as e:
             logger.error(f"Error en búsqueda: {str(e)}")
             return []
 
+    def filter_valid_properties(self, properties: List[Dict]) -> List[Dict]:
+        """Filtra propiedades válidas según sus operaciones"""
+        valid_properties = []
+
+        for prop in properties:
+            if not prop.get('operations'):
+                continue
+
+            # Verificar operaciones válidas
+            for op in prop.get('operations', []):
+                if (op.get('prices') and 
+                    op['prices'][0].get('price') > 0):
+                    valid_properties.append(prop)
+                    break
+
+        return valid_properties
+
     def process_properties(self, raw_properties: List[Dict], operation_type: str) -> List[Property]:
+        """Procesa las propiedades raw a objetos Property"""
         processed_properties = []
 
         for prop in raw_properties:
@@ -105,7 +117,8 @@ class PropertyManager:
             # Encontrar la operación correcta
             operation = None
             for op in operations:
-                if op.get('operation_type') == 'Rent' and operation_type.lower() == 'alquiler':
+                op_type = 'Rent' if operation_type.lower() == 'alquiler' else 'Sale'
+                if op.get('operation_type') == op_type:
                     operation = op
                     break
 
@@ -126,7 +139,7 @@ class PropertyManager:
                 location=prop.get('location', {}).get('name', ''),
                 price=price_info.get('price', 0),
                 currency=price_info.get('currency', ''),
-                operation_type='Alquiler',
+                operation_type=operation_type,
                 rooms=prop.get('room_amount', 0),
                 bathrooms=prop.get('bathroom_amount', 0),
                 surface=float(prop.get('total_surface', 0)),
@@ -139,17 +152,18 @@ class PropertyManager:
         return processed_properties
 
 def format_property_message(properties: List[Property]) -> str:
+    """Formatea las propiedades en un mensaje legible"""
     if not properties:
-        return "No encontré propiedades en alquiler disponibles en Villa Ballester en este momento. ¿Te gustaría que busque en otras zonas cercanas?"
+        return "No encontré propiedades disponibles que coincidan con tu búsqueda en este momento. ¿Te gustaría modificar algunos criterios de búsqueda?"
 
-    message = "Encontré las siguientes propiedades en alquiler en Villa Ballester:\n\n"
+    message = f"Encontré {len(properties)} propiedades que coinciden con tu búsqueda:\n\n"
 
     for i, prop in enumerate(properties[:5], 1):
         price_str = f"{prop.currency} {prop.price:,.0f}" if prop.price > 0 else "Consultar precio"
 
         message += f"*{i}. {prop.title}*\n"
         message += f"📍 {prop.address}\n"
-        message += f"💰 Alquiler: {price_str}\n"
+        message += f"💰 {prop.operation_type}: {price_str}\n"
 
         if prop.expenses > 0:
             message += f"💵 Expensas: ${prop.expenses:,.0f}\n"
@@ -169,8 +183,46 @@ def format_property_message(properties: List[Property]) -> str:
 
     return message
 
+def interpret_user_query(query: str) -> dict:
+    """Interpreta la consulta del usuario y extrae parámetros de búsqueda"""
+    params = {}
+
+    # Detectar tipo de operación
+    if any(word in query.lower() for word in ['alquiler', 'alquilar', 'renta', 'rentar']):
+        params['operation_type'] = ["2"]
+    elif any(word in query.lower() for word in ['venta', 'comprar', 'compra']):
+        params['operation_type'] = ["1"]
+
+    # Detectar tipo de propiedad
+    if 'departamento' in query.lower() or 'depto' in query.lower():
+        params['property_types'] = ["2"]
+    elif 'casa' in query.lower():
+        params['property_types'] = ["3"]
+    elif 'ph' in query.lower():
+        params['property_types'] = ["13"]
+
+    # Detectar cantidad de ambientes
+    import re
+    ambient_match = re.search(r'(\d+)\s*ambientes?', query.lower())
+    if ambient_match:
+        params['rooms'] = int(ambient_match.group(1))
+
+    return params
+
 def search_properties(query: str) -> str:
+    """Función principal de búsqueda"""
     manager = PropertyManager()
-    raw_properties = manager.search_properties('Alquiler')
-    properties = manager.process_properties(raw_properties, 'Alquiler')
+    search_params = interpret_user_query(query)
+
+    # Determinar tipo de operación para el procesamiento
+    operation_type = 'Alquiler' if search_params.get('operation_type') == ["2"] else 'Venta'
+
+    raw_properties = manager.search_properties(**search_params)
+    properties = manager.process_properties(raw_properties, operation_type)
     return format_property_message(properties)
+
+if __name__ == "__main__":
+    # Ejemplo de uso
+    query = "Busco departamento en alquiler de 2 ambientes"
+    result = search_properties(query)
+    print(result)
