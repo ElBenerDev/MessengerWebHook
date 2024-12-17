@@ -1,7 +1,10 @@
 import requests
 import logging
 import sys
+import os
+from flask import Flask, request, jsonify
 
+# Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s: %(message)s',
@@ -10,130 +13,158 @@ logging.basicConfig(
 
 class TokkoManager:
     def __init__(self):
-        self.api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
+        # Obtener API key desde variable de entorno
+        self.api_key = os.getenv('TOKKO_API_KEY', "34430fc661d5b961de6fd53a9382f7a232de3ef0")
         self.api_url = "https://www.tokkobroker.com/api/v1/property/"
-        self.operation_types = {
-            'rent': {
-                'keywords': ['alquiler', 'alquilar', 'renta', 'rentar'],
-                'api_value': 'Rent',
-                'display_name': 'Alquiler'
-            },
-            'sale': {
-                'keywords': ['venta', 'compra', 'comprar', 'vender'],
-                'api_value': 'Sale',
-                'display_name': 'Venta'
-            }
-        }
 
-    def detect_operation_type(self, query: str) -> dict:
-        query_lower = query.lower()
-        for op_type, data in self.operation_types.items():
-            if any(keyword in query_lower for keyword in data['keywords']):
-                return data
-        return self.operation_types['sale']
-
-    def search_properties(self, query: str) -> str:
+    def search_properties(self, **kwargs):
         try:
-            operation_data = self.detect_operation_type(query)
-
+            # Preparar parámetros base
             params = {
-                "limit": 10,  # Aumentamos el límite para tener más opciones después de filtrar
                 "key": self.api_key,
-                "operation_type": operation_data['api_value'],
-                "location": "Villa Ballester",
-                "property_type": "Apartment",
-                "min_rooms": 2,
-                "order_by": "-publication_date"
+                "limit": kwargs.get('limit', 20),
+                "order_by": kwargs.get('order_by', '-publication_date')
             }
 
+            # Agregar todos los parámetros proporcionados
+            for key, value in kwargs.items():
+                if key not in ['limit', 'order_by', 'key']:
+                    params[key] = value
+
+            # Realizar la solicitud a la API
             response = requests.get(self.api_url, params=params)
 
             if response.status_code != 200:
-                return "Lo siento, no pude conectar con el sistema de búsqueda en este momento."
+                return {
+                    "error": "No se pudo conectar con el sistema de búsqueda",
+                    "status_code": response.status_code
+                }
 
             data = response.json()
 
-            # Filtrar propiedades según criterios específicos
-            properties = [p for p in data.get('objects', []) 
-                        if p.get('type', {}).get('name') == "Apartment" 
-                        and "Villa Ballester" in p.get('location', {}).get('full_location', '')
-                        and p.get('status') == 2  # Activo
-                        and p.get('room_amount', 0) >= 2]  # Al menos 2 ambientes
-
+            # Verificar si hay propiedades
+            properties = data.get('objects', [])
             if not properties:
-                return f"No encontré departamentos en {operation_data['display_name'].lower()} en Villa Ballester que cumplan con los requisitos."
+                return {
+                    "message": "No se encontraron propiedades",
+                    "total": 0,
+                    "properties": []
+                }
 
-            result = f"*🏢 Departamentos en {operation_data['display_name']} en Villa Ballester:*\n\n"
+            # Formatear propiedades
+            formatted_properties = []
+            for prop in properties:
+                # Información básica de la propiedad
+                property_details = {
+                    "id": prop.get('id'),
+                    "title": prop.get('publication_title', 'Propiedad disponible'),
+                    "address": prop.get('address', 'Dirección no disponible'),
+                    "type": prop.get('type', {}).get('name'),
+                    "status": prop.get('status'),
+                    "publication_date": prop.get('publication_date')
+                }
 
-            for i, prop in enumerate(properties[:5], 1):  # Limitamos a mostrar solo 5 resultados
-                # Obtener precio
-                operation = next((op for op in prop.get('operations', []) 
-                                if op.get('operation_type') == operation_data['api_value']), None)
-                price = "Consultar precio"
-                if operation and operation.get('prices'):
-                    currency = operation['prices'][0].get('currency', '')
-                    amount = operation['prices'][0].get('price', 0)
-                    if operation_data['api_value'] == 'Rent':
-                        price = f"ARS {amount:,.0f} por mes" if currency == 'ARS' else f"USD {amount:,.0f} por mes"
-                    else:
-                        price = f"USD {amount:,.0f}"
+                # Agregar operaciones (precios)
+                operations = []
+                for op in prop.get('operations', []):
+                    operation_info = {
+                        "operation_type": op.get('operation_type'),
+                        "prices": [
+                            {
+                                "currency": price.get('currency'),
+                                "price": price.get('price'),
+                                "price_type": price.get('price_type')
+                            } for price in op.get('prices', [])
+                        ]
+                    }
+                    operations.append(operation_info)
+                property_details['operations'] = operations
 
-                # Formatear propiedad
-                result += (
-                    f"*{i}. {prop.get('publication_title', 'Departamento disponible')}*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📍 {prop.get('address', 'Consultar dirección')}\n"
-                    f"💰 {price}\n"
-                    f"📐 {prop.get('total_surface', '0')}m² totales\n"
-                )
+                # Características adicionales
+                property_details.update({
+                    "surface": {
+                        "total": prop.get('total_surface'),
+                        "covered": prop.get('covered_surface')
+                    },
+                    "rooms": {
+                        "total": prop.get('room_amount'),
+                        "bedrooms": prop.get('bedroom_amount'),
+                        "bathrooms": prop.get('bathroom_amount')
+                    },
+                    "location": prop.get('location', {}).get('full_location'),
+                    "features": [feature.get('name') for feature in prop.get('features', [])],
+                    "photos": [photo.get('image') for photo in prop.get('photos', [])],
+                    "public_url": prop.get('public_url')
+                })
 
-                # Agregar detalles si existen
-                if prop.get('room_amount'):
-                    result += f"🛏 {prop.get('room_amount')} ambientes\n"
-                if prop.get('bedroom_amount'):
-                    result += f"🛋 {prop.get('bedroom_amount')} dormitorios\n"
-                if prop.get('bathroom_amount'):
-                    result += f"🚿 {prop.get('bathroom_amount')} baños\n"
-                if prop.get('expenses'):
-                    result += f"💵 Expensas: ARS {prop.get('expenses'):,.0f}\n"
-                if prop.get('parking_amount'):
-                    result += f"🚗 {prop.get('parking_amount')} cocheras\n"
+                formatted_properties.append(property_details)
 
-                # Agregar características adicionales
-                features = prop.get('features', [])
-                if features:
-                    result += "\n📋 Características:\n"
-                    for feature in features[:3]:  # Limitamos a 3 características
-                        result += f"✓ {feature.get('name', '')}\n"
-
-                # Agregar enlace
-                if prop.get('public_url'):
-                    result += f"\n🔍 Ver más detalles: {prop.get('public_url')}\n"
-
-                # Agregar primera foto
-                main_photo = next((photo['image'] for photo in prop.get('photos', []) 
-                                 if photo.get('is_front_cover')), None)
-                if main_photo:
-                    result += f"\n{main_photo}\n"
-
-                result += "\n"
-
-            return result
+            return {
+                "total": len(properties),
+                "properties": formatted_properties
+            }
 
         except Exception as e:
-            logging.error(f"❌ Error: {str(e)}")
-            return "Lo siento, ocurrió un error al buscar propiedades."
+            logging.error(f"Error en búsqueda: {str(e)}")
+            return {
+                "error": "Ocurrió un error al buscar propiedades",
+                "details": str(e)
+            }
 
-def search_properties(query: str) -> str:
+# Configurar Flask
+app = Flask(__name__)
+
+@app.route('/search', methods=['GET', 'POST'])
+def search_properties():
+    # Obtener parámetros de búsqueda
+    if request.method == 'POST':
+        search_params = request.json or request.form.to_dict()
+    else:
+        search_params = request.args.to_dict()
+
+    try:
+        # Convertir valores numéricos
+        for key in ['limit', 'page', 'room_amount', 'bedroom_amount', 'bathroom_amount']:
+            if key in search_params:
+                try:
+                    search_params[key] = int(search_params[key])
+                except ValueError:
+                    return jsonify({
+                        "error": f"El parámetro {key} debe ser un número entero",
+                        "status": "bad_request"
+                    }), 400
+
+        # Realizar búsqueda
+        tokko = TokkoManager()
+        result = tokko.search_properties(**search_params)
+
+        return jsonify(result)
+
+    except Exception as e:
+        logging.error(f"Error en búsqueda: {str(e)}")
+        return jsonify({
+            "error": "Error interno del servidor",
+            "details": str(e)
+        }), 500
+
+# Función de búsqueda directa (como en tu código original)
+def search_properties_func(**kwargs):
     """Función principal que busca propiedades"""
     try:
         tokko = TokkoManager()
-        return tokko.search_properties(query)
+        return tokko.search_properties(**kwargs)
     except Exception as e:
         logging.error(f"❌ Error en search_properties: {str(e)}")
-        return "Lo siento, ocurrió un error al buscar propiedades"
+        return {"error": "Ocurrió un error al buscar propiedades"}
 
 if __name__ == "__main__":
-    # Ejemplo de uso
-    result = search_properties("departamento en alquiler en Villa Ballester")
+    # Ejemplo de uso directo
+    result = search_properties_func(
+        operation_type="Sale", 
+        property_type="Apartment", 
+        location="Villa Ballester"
+    )
     print(result)
+
+    # Iniciar servidor Flask
+    app.run(debug=True, port=5000)
