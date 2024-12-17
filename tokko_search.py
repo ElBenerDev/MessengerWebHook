@@ -3,8 +3,9 @@ import requests
 import json
 import logging
 import pandas as pd
-import re
 from dataclasses import dataclass
+from datetime import datetime
+import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,19 +42,16 @@ class PropertyManager:
         }
         return operation_types.get(operation_type.lower(), '2')
 
-    def search_properties(self, 
-                         operation_type: str = None,
-                         rooms: int = None,
-                         location_id: str = "25034") -> List[Dict]:
+    def search_properties(self, operation_type: str = None) -> List[Dict]:
         """
-        Búsqueda de propiedades con filtros específicos
+        Búsqueda de propiedades usando el endpoint específico de búsqueda
         """
         # Determinar tipo de operación
         operation_type_id = self.get_operation_type_id(operation_type) if operation_type else '2'
 
         search_data = {
             "data": {
-                "current_localization_id": location_id,
+                "current_localization_id": "25034",  # Villa Ballester
                 "current_localization_type": "division",
                 "operation_types": [operation_type_id],
                 "property_types": ["2", "13"],  # Departamentos y PH
@@ -66,10 +64,6 @@ class PropertyManager:
                 "order": "ASC"
             }
         }
-
-        # Agregar filtro de ambientes si se especifica
-        if rooms:
-            search_data["data"]["filters"].append(["room_amount", "=", str(rooms)])
 
         try:
             response = requests.post(
@@ -90,110 +84,127 @@ class PropertyManager:
             data = response.json()
 
             # Guardar respuesta completa para análisis
-            with open('last_api_response.json', 'w') as f:
-                json.dump(data, f, indent=2)
+            with open('last_api_response.json', 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
 
-            return self.filter_properties(data.get('objects', []), operation_type)
+            return data.get('objects', [])
 
         except Exception as e:
             logger.error(f"Error en búsqueda: {str(e)}")
             return []
 
-    def filter_properties(self, properties: List[Dict], operation_type: str) -> List[Dict]:
-        """Filtra las propiedades según el tipo de operación"""
-        operation_type_map = {
-            'alquiler': 'Rent',
-            'venta': 'Sale',
-            'temporal': 'Temporary'
-        }
+    def export_tokko_data_to_csv(self) -> str:
+        """Exporta todos los datos de la API de Tokko a un CSV para análisis"""
+        try:
+            # Obtener datos crudos de la API
+            raw_properties = self.search_properties()
 
-        target_operation = operation_type_map.get(operation_type.lower() if operation_type else 'alquiler')
-        filtered_properties = []
+            # Lista para almacenar los datos procesados
+            properties_data = []
 
-        for prop in properties:
-            if not prop.get('operations'):
-                continue
+            for prop in raw_properties:
+                # Procesar cada operación de la propiedad
+                for operation in prop.get('operations', []):
+                    if operation.get('prices'):
+                        property_info = {
+                            'id': prop.get('id'),
+                            'title': prop.get('publication_title'),
+                            'type': prop.get('type', {}).get('name'),
+                            'address': prop.get('fake_address'),
+                            'location': prop.get('location', {}).get('name'),
+                            'operation_type': operation.get('operation_type'),
+                            'price': operation['prices'][0].get('price'),
+                            'currency': operation['prices'][0].get('currency'),
+                            'rooms': prop.get('room_amount'),
+                            'bathrooms': prop.get('bathroom_amount'),
+                            'total_surface': prop.get('total_surface'),
+                            'covered_surface': prop.get('covered_surface'),
+                            'expenses': prop.get('expenses'),
+                            'web_price': prop.get('web_price'),
+                            'status': prop.get('status'),
+                            'has_parking': prop.get('parking_amount', 0) > 0,
+                            'floor': prop.get('floor'),
+                            'orientation': prop.get('orientation'),
+                            'amenities': ', '.join(prop.get('tags', [])),
+                            'url': f"https://ficha.info/p/{prop.get('public_url', '').strip()}"
+                        }
+                        properties_data.append(property_info)
 
-            for op in prop.get('operations', []):
-                if (op.get('operation_type') == target_operation and 
-                    op.get('prices') and 
-                    op['prices'][0].get('price') > 0):
-                    filtered_properties.append(prop)
-                    break
+            # Crear DataFrame
+            df = pd.DataFrame(properties_data)
 
-        return filtered_properties
+            # Generar nombre de archivo con timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f'tokko_properties_{timestamp}.csv'
+
+            # Guardar CSV
+            df.to_csv(filename, index=False, encoding='utf-8')
+
+            # Generar resumen estadístico
+            summary = {
+                'total_properties': len(df),
+                'by_operation_type': df['operation_type'].value_counts().to_dict(),
+                'average_price_rent': df[df['operation_type'] == 'Rent']['price'].mean(),
+                'average_price_sale': df[df['operation_type'] == 'Sale']['price'].mean(),
+                'by_property_type': df['type'].value_counts().to_dict(),
+                'average_surface': df['total_surface'].mean(),
+                'rooms_distribution': df['rooms'].value_counts().to_dict()
+            }
+
+            # Guardar resumen en JSON
+            summary_filename = f'tokko_summary_{timestamp}.json'
+            with open(summary_filename, 'w', encoding='utf-8') as f:
+                json.dump(summary, f, indent=2, ensure_ascii=False)
+
+            return f"""
+            Datos exportados exitosamente:
+            - CSV: {filename}
+            - Resumen: {summary_filename}
+
+            Resumen rápido:
+            - Total propiedades: {summary['total_properties']}
+            - Alquileres: {summary['by_operation_type'].get('Rent', 0)}
+            - Ventas: {summary['by_operation_type'].get('Sale', 0)}
+            - Precio promedio alquiler: ${summary['average_price_rent']:,.2f}
+            - Precio promedio venta: ${summary['average_price_sale']:,.2f}
+            """
+
+        except Exception as e:
+            logger.error(f"Error exportando datos: {str(e)}")
+            return f"Error al exportar datos: {str(e)}"
 
     def process_properties(self, raw_properties: List[Dict], operation_type: str) -> List[Property]:
         """Procesa las propiedades raw a objetos Property"""
         processed_properties = []
         operation_display = 'Alquiler' if operation_type.lower() == 'alquiler' else 'Venta'
+        target_type = 'Rent' if operation_type.lower() == 'alquiler' else 'Sale'
 
         for prop in raw_properties:
             # Verificar operaciones
-            operations = prop.get('operations', [])
-            if not operations:
-                continue
+            for operation in prop.get('operations', []):
+                if operation.get('operation_type') == target_type and operation.get('prices'):
+                    price_info = operation['prices'][0]
 
-            # Encontrar la operación correcta
-            operation = None
-            target_type = 'Rent' if operation_type.lower() == 'alquiler' else 'Sale'
-
-            for op in operations:
-                if op.get('operation_type') == target_type:
-                    operation = op
+                    processed_properties.append(Property(
+                        id=str(prop.get('id', '')),
+                        title=prop.get('publication_title', ''),
+                        type=prop.get('type', {}).get('name', ''),
+                        address=prop.get('fake_address', ''),
+                        location=prop.get('location', {}).get('name', ''),
+                        price=price_info.get('price', 0),
+                        currency=price_info.get('currency', ''),
+                        operation_type=operation_display,
+                        rooms=prop.get('room_amount', 0),
+                        bathrooms=prop.get('bathroom_amount', 0),
+                        surface=float(prop.get('total_surface', 0) or 0),
+                        expenses=float(prop.get('expenses', 0) or 0),
+                        photos=[p['image'] for p in prop.get('photos', [])[:3] if p.get('image')],
+                        url=f"https://ficha.info/p/{prop.get('public_url', '').strip()}",
+                        description=prop.get('description', '')
+                    ))
                     break
 
-            if not operation or not operation.get('prices'):
-                continue
-
-            price_info = operation['prices'][0]
-
-            processed_properties.append(Property(
-                id=str(prop.get('id', '')),
-                title=prop.get('publication_title', ''),
-                type=prop.get('type', {}).get('name', ''),
-                address=prop.get('fake_address', ''),
-                location=prop.get('location', {}).get('name', ''),
-                price=price_info.get('price', 0),
-                currency=price_info.get('currency', ''),
-                operation_type=operation_display,
-                rooms=prop.get('room_amount', 0),
-                bathrooms=prop.get('bathroom_amount', 0),
-                surface=float(prop.get('total_surface', 0) or 0),
-                expenses=float(prop.get('expenses', 0) or 0),
-                photos=[p['image'] for p in prop.get('photos', [])[:3] if p.get('image')],
-                url=f"https://ficha.info/p/{prop.get('public_url', '').strip()}",
-                description=prop.get('description', '')
-            ))
-
         return processed_properties
-
-def analyze_api_response(properties: List[Dict]) -> pd.DataFrame:
-    """Analiza y guarda la respuesta de la API en un CSV"""
-    properties_data = []
-
-    for prop in properties:
-        for operation in prop.get('operations', []):
-            if operation.get('prices'):
-                property_info = {
-                    'id': prop.get('id'),
-                    'title': prop.get('publication_title'),
-                    'type': prop.get('type', {}).get('name'),
-                    'address': prop.get('fake_address'),
-                    'location': prop.get('location', {}).get('name'),
-                    'operation_type': operation.get('operation_type'),
-                    'price': operation['prices'][0].get('price'),
-                    'currency': operation['prices'][0].get('currency'),
-                    'rooms': prop.get('room_amount'),
-                    'bathrooms': prop.get('bathroom_amount'),
-                    'surface': prop.get('total_surface'),
-                    'expenses': prop.get('expenses'),
-                }
-                properties_data.append(property_info)
-
-    df = pd.DataFrame(properties_data)
-    df.to_csv('properties_analysis.csv', index=False)
-    return df
 
 def format_property_message(properties: List[Property]) -> str:
     """Formatea las propiedades en un mensaje legible"""
@@ -233,26 +244,25 @@ def search_properties(query: str) -> str:
         operation_type = 'alquiler'
     elif any(word in query.lower() for word in ['venta', 'comprar', 'compra']):
         operation_type = 'venta'
+    else:
+        operation_type = 'alquiler'  # default a alquiler si no se especifica
 
-    # Detectar cantidad de ambientes
-    rooms = None
-    rooms_match = re.search(r'(\d+)\s*ambientes?', query.lower())
-    if rooms_match:
-        rooms = int(rooms_match.group(1))
-
-    # Realizar búsqueda
     manager = PropertyManager()
-    raw_properties = manager.search_properties(operation_type=operation_type, rooms=rooms)
-
-    # Analizar resultados
-    analyze_api_response(raw_properties)
-
-    # Procesar y formatear resultados
-    properties = manager.process_properties(raw_properties, operation_type or 'alquiler')
+    raw_properties = manager.search_properties(operation_type)
+    properties = manager.process_properties(raw_properties, operation_type)
     return format_property_message(properties)
 
 if __name__ == "__main__":
     # Ejemplo de uso
+    manager = PropertyManager()
+
+    # Exportar datos a CSV y obtener resumen
+    print("Exportando datos de Tokko...")
+    export_result = manager.export_tokko_data_to_csv()
+    print(export_result)
+
+    # Ejemplo de búsqueda
     query = "Busco departamento en alquiler de 2 ambientes"
-    result = search_properties(query)
-    print(result)
+    search_result = search_properties(query)
+    print("\nResultado de búsqueda:")
+    print(search_result)
