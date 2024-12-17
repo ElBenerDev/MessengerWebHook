@@ -1,19 +1,9 @@
-from typing import Dict, List, Optional
 import requests
 import json
-import logging
 import pandas as pd
-from dataclasses import dataclass
+import logging
+import sys
 from datetime import datetime
-import os
-
-# Configuración de logging solo para consola
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger('TokkoAPI')
 
 class TokkoManager:
     def __init__(self):
@@ -21,29 +11,39 @@ class TokkoManager:
         self.api_url = "https://www.tokkobroker.com/api/v1/property/search"
         self.csv_path = "properties_database.csv"
 
+        # Tipos de operación según la API de Tokko
+        self.operation_types = {
+            "Sale": "Venta",
+            "Rent": "Alquiler"
+        }
+
+        # Configurar logging
+        self.setup_logging()
+
+    def setup_logging(self):
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s %(levelname)s: %(message)s',
+            handlers=[logging.StreamHandler(sys.stdout)]
+        )
+
     def download_all_properties(self) -> bool:
-        """Descarga todas las propiedades de Tokko y las guarda en CSV"""
         try:
-            print("\n" + "="*50)
-            logger.info("🔄 Iniciando descarga de propiedades desde Tokko API")
-            print("="*50)
+            logging.info("\n" + "="*50)
+            logging.info("🔄 INICIANDO DESCARGA DE PROPIEDADES TOKKO API")
+            logging.info("="*50)
 
             all_properties = []
-            for operation_type in ['1', '2']:  # 1=venta, 2=alquiler
-                operation_name = 'venta' if operation_type == '1' else 'alquiler'
-                logger.info(f"📡 Consultando propiedades en {operation_name}...")
+
+            for operation_type in self.operation_types.keys():
+                logging.info(f"\n📡 Consultando propiedades en {self.operation_types[operation_type]}...")
 
                 search_data = {
                     "current_localization_id": "25034",  # Villa Ballester
                     "current_localization_type": "division",
-                    "operation_types": [operation_type],
-                    "property_types": ["2", "13"],
-                    "status": ["2"],
+                    "operation_type": operation_type,
                     "with_prices": True
                 }
-
-                print(f"\n🔍 Request para {operation_name}:")
-                print(json.dumps(search_data, indent=2))
 
                 response = requests.post(
                     self.api_url,
@@ -52,161 +52,104 @@ class TokkoManager:
                     headers={"Content-Type": "application/json"}
                 )
 
-                logger.info(f"📊 Status API: {response.status_code}")
-
                 if response.status_code != 200:
-                    logger.error(f"❌ Error en API: {response.text}")
+                    logging.error(f"❌ Error en la API: {response.status_code}")
+                    logging.error(response.text)
                     continue
 
-                properties = response.json().get('objects', [])
-                logger.info(f"✅ Recibidas {len(properties)} propiedades en {operation_name}")
+                data = response.json()
+                properties = data.get('objects', [])
+
+                logging.info(f"✅ Encontradas {len(properties)} propiedades")
 
                 for prop in properties:
-                    for operation in prop.get('operations', []):
-                        if operation.get('prices'):
-                            price_info = operation['prices'][0]
+                    operations = prop.get('operations', [])
+                    for operation in operations:
+                        if operation.get('operation_type') == operation_type and operation.get('prices'):
                             property_info = {
                                 'id': prop.get('id'),
-                                'title': prop.get('publication_title', ''),
-                                'type': prop.get('type', {}).get('name', ''),
-                                'address': prop.get('fake_address', ''),
-                                'location': prop.get('location', {}).get('name', ''),
-                                'operation_type': 'Alquiler' if operation_type == '2' else 'Venta',
-                                'price': price_info.get('price', 0),
-                                'currency': price_info.get('currency', ''),
-                                'rooms': prop.get('room_amount', 0),
-                                'bathrooms': prop.get('bathroom_amount', 0),
-                                'total_surface': prop.get('total_surface', 0),
-                                'covered_surface': prop.get('covered_surface', 0),
-                                'expenses': prop.get('expenses', 0),
-                                'description': prop.get('description', ''),
-                                'amenities': ', '.join(prop.get('tags', [])),
-                                'photos': '|'.join([p['image'] for p in prop.get('photos', [])[:3] if p.get('image')]),
-                                'url': f"https://ficha.info/p/{prop.get('public_url', '').strip()}",
-                                'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                'title': prop.get('publication_title'),
+                                'type': prop.get('type', {}).get('name'),
+                                'operation_type': operation_type,
+                                'price': operation['prices'][0].get('price'),
+                                'currency': operation['prices'][0].get('currency'),
+                                'address': prop.get('address'),
+                                'location': prop.get('location', {}).get('name'),
+                                'surface': prop.get('total_surface'),
+                                'rooms': prop.get('room_amount'),
+                                'bathrooms': prop.get('bathroom_amount'),
+                                'expenses': prop.get('expenses'),
+                                'description': prop.get('description'),
                             }
                             all_properties.append(property_info)
 
-            logger.info(f"📝 Creando DataFrame con {len(all_properties)} propiedades...")
-            df = pd.DataFrame(all_properties)
-
-            logger.info(f"💾 Guardando datos en {self.csv_path}...")
-            df.to_csv(self.csv_path, index=False, encoding='utf-8')
-
-            print("\n" + "="*50)
-            print("📊 RESUMEN DE DATOS:")
-            print("="*50)
-            print(f"📍 Total propiedades: {len(df)}")
-            print(f"🏠 En alquiler: {len(df[df['operation_type'] == 'Alquiler'])}")
-            print(f"🏢 En venta: {len(df[df['operation_type'] == 'Venta'])}")
-            print(f"💰 Precio promedio alquiler: ${df[df['operation_type'] == 'Alquiler']['price'].mean():,.2f}")
-            print(f"💵 Precio promedio venta: ${df[df['operation_type'] == 'Venta']['price'].mean():,.2f}")
-            print("="*50 + "\n")
-
-            return True
+            if all_properties:
+                df = pd.DataFrame(all_properties)
+                df.to_csv(self.csv_path, index=False)
+                logging.info(f"\n💾 Base de datos guardada en {self.csv_path}")
+                logging.info(f"📊 Total de propiedades: {len(all_properties)}")
+                return True
+            else:
+                logging.warning("⚠️ No se encontraron propiedades")
+                return False
 
         except Exception as e:
-            logger.error(f"❌ Error descargando propiedades: {str(e)}")
+            logging.error(f"❌ Error: {str(e)}")
             return False
 
     def search_in_database(self, query: str) -> str:
-        """Busca propiedades en el CSV según los criterios del usuario"""
         try:
-            print("\n" + "-"*50)
-            logger.info(f"🔍 Nueva búsqueda: '{query}'")
+            logging.info("\n" + "="*50)
+            logging.info(f"🔍 BÚSQUEDA: {query}")
+            logging.info("="*50)
 
-            if not os.path.exists(self.csv_path):
-                logger.info("📥 Base de datos no encontrada, descargando datos...")
-                self.download_all_properties()
-
-            if os.path.exists(self.csv_path):
-                file_time = os.path.getmtime(self.csv_path)
-                if (datetime.now().timestamp() - file_time) > 3600:
-                    logger.info("🔄 Base de datos obsoleta, actualizando...")
-                    self.download_all_properties()
-
-            logger.info(f"📖 Leyendo base de datos desde {self.csv_path}")
             df = pd.read_csv(self.csv_path)
-            logger.info(f"✅ Base de datos cargada: {len(df)} propiedades")
 
-            operation_type = 'Alquiler'
-            if any(word in query.lower() for word in ['venta', 'comprar', 'compra']):
-                operation_type = 'Venta'
+            # Determinar tipo de operación
+            operation_type = 'Rent' if any(word in query.lower() for word in ['alquiler', 'alquilar', 'renta', 'rentar']) else 'Sale'
 
-            logger.info(f"🏷️ Tipo de operación detectada: {operation_type}")
+            logging.info(f"🏷️ Tipo de operación detectada: {self.operation_types[operation_type]} ({operation_type})")
 
+            # Filtrar por tipo de operación
             results = df[df['operation_type'] == operation_type].copy()
-            logger.info(f"📊 Propiedades filtradas por {operation_type}: {len(results)}")
 
-            if 'amb' in query.lower() or 'ambiente' in query.lower():
-                rooms = [int(s) for s in query.split() if s.isdigit()]
-                if rooms:
-                    logger.info(f"🏠 Filtrando por {rooms[0]} ambientes")
-                    results = results[results['rooms'] == rooms[0]]
-                    logger.info(f"✨ Propiedades después del filtro: {len(results)}")
+            if results.empty:
+                return f"No encontré propiedades en {self.operation_types[operation_type].lower()}"
 
-            results = results.sort_values('price')
+            # Formatear resultados
+            formatted_results = []
+            for _, prop in results.iterrows():
+                price = f"{prop['currency']} {prop['price']:,.0f}"
+                expenses = f"(Expensas: ${prop['expenses']:,.0f})" if pd.notna(prop['expenses']) and prop['expenses'] > 0 else ""
 
-            if len(results) == 0:
-                logger.info("❌ No se encontraron propiedades")
-                return "No encontré propiedades que coincidan con tu búsqueda. ¿Quieres probar con otros criterios?"
+                result = (
+                    f"🏠 {prop['title']}\n"
+                    f"💰 {price} {expenses}\n"
+                    f"📍 {prop['address']}\n"
+                    f"📏 {prop['surface']}m² | 🛏 {prop['rooms']} amb | 🚿 {prop['bathrooms']} baños\n"
+                    f"🔍 ID: {prop['id']}\n"
+                    f"➡️ Más info: https://ficha.info/p/{prop['id']}\n"
+                )
+                formatted_results.append(result)
 
-            logger.info(f"📝 Preparando respuesta con {len(results)} propiedades")
-            message = f"Encontré {len(results)} propiedades en {operation_type.lower()}:\n\n"
+            response = "\n\n".join(formatted_results[:5])  # Limitamos a 5 resultados
+            logging.info(f"✅ Se encontraron {len(formatted_results)} propiedades")
 
-            for _, prop in results.head().iterrows():
-                price_str = f"{prop['currency']} {prop['price']:,.0f}" if prop['price'] > 0 else "Consultar precio"
-
-                message += f"*{prop['title']}*\n"
-                message += f"📍 {prop['address']}\n"
-                message += f"💰 {operation_type}: {price_str}\n"
-
-                if prop['expenses'] > 0:
-                    message += f"💵 Expensas: ${prop['expenses']:,.0f}\n"
-
-                if prop['rooms'] > 0:
-                    message += f"🏠 {prop['rooms']} ambiente{'s' if prop['rooms'] > 1 else ''}\n"
-
-                if prop['total_surface'] > 0:
-                    message += f"📐 {prop['total_surface']:.0f}m²\n"
-
-                message += f"🔍 Ver más: {prop['url']}\n"
-
-                photos = str(prop['photos']).split('|')
-                if photos and photos[0] and photos[0] != 'nan':
-                    message += f"{photos[0]}\n"
-
-                message += "\n"
-
-            logger.info("✅ Respuesta preparada exitosamente")
-            print("-"*50 + "\n")
-            return message
+            return response
 
         except Exception as e:
-            logger.error(f"❌ Error en búsqueda: {str(e)}")
-            return "Lo siento, hubo un error al procesar tu búsqueda. Por favor, intenta nuevamente."
+            logging.error(f"❌ Error: {str(e)}")
+            return "Lo siento, ocurrió un error al buscar propiedades"
 
-def search_properties(query: str) -> str:
-    """Función principal de búsqueda"""
-    manager = TokkoManager()
-    return manager.search_in_database(query)
-
+# Ejemplo de uso
 if __name__ == "__main__":
-    manager = TokkoManager()
+    tokko = TokkoManager()
 
-    print("\n🔥 INICIANDO SISTEMA DE BÚSQUEDA DE PROPIEDADES 🔥\n")
-    logger.info("Actualizando base de datos de propiedades...")
-    manager.download_all_properties()
+    # Descargar propiedades
+    tokko.download_all_properties()
 
-    queries = [
-        "Busco departamento en alquiler de 2 ambientes",
-        "Quiero comprar un departamento",
-        "Departamento en alquiler 3 ambientes"
-    ]
-
-    for query in queries:
-        print(f"\n🔍 BÚSQUEDA: {query}")
-        result = search_properties(query)
-        print(result)
-
-    print("\n✨ PROGRAMA FINALIZADO ✨\n")
+    # Realizar búsqueda
+    query = "departamento en alquiler en Villa Ballester"
+    results = tokko.search_in_database(query)
+    print("\nResultados de la búsqueda:")
+    print(results)
