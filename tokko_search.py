@@ -2,6 +2,7 @@ import requests
 import logging
 import sys
 import os
+from datetime import datetime
 from flask import Flask, request, jsonify
 
 # Configuración de logging
@@ -16,6 +17,16 @@ class TokkoManager:
         # Obtener API key desde variable de entorno
         self.api_key = os.getenv('TOKKO_API_KEY', "34430fc661d5b961de6fd53a9382f7a232de3ef0")
         self.api_url = "https://www.tokkobroker.com/api/v1/property/"
+
+    def get_active_properties(self, properties):
+        """Filtrar propiedades activas"""
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        active_properties = [
+            prop for prop in properties 
+            if prop.get('status') == 2 and 
+               (prop.get('deleted_at') is None or prop.get('deleted_at') > current_date)
+        ]
+        return active_properties
 
     def search_properties(self, **kwargs):
         try:
@@ -51,9 +62,12 @@ class TokkoManager:
                     "properties": []
                 }
 
+            # Filtrar propiedades activas
+            active_properties = self.get_active_properties(properties)
+
             # Formatear propiedades
             formatted_properties = []
-            for prop in properties:
+            for prop in active_properties:
                 # Información básica de la propiedad
                 property_details = {
                     "id": prop.get('id'),
@@ -61,7 +75,8 @@ class TokkoManager:
                     "address": prop.get('address', 'Dirección no disponible'),
                     "type": prop.get('type', {}).get('name'),
                     "status": prop.get('status'),
-                    "publication_date": prop.get('publication_date')
+                    "publication_date": prop.get('publication_date'),
+                    "public_url": prop.get('public_url')  # Agregar URL pública
                 }
 
                 # Agregar operaciones (precios)
@@ -94,13 +109,12 @@ class TokkoManager:
                     "location": prop.get('location', {}).get('full_location'),
                     "features": [feature.get('name') for feature in prop.get('features', [])],
                     "photos": [photo.get('image') for photo in prop.get('photos', [])],
-                    "public_url": prop.get('public_url')
                 })
 
                 formatted_properties.append(property_details)
 
             return {
-                "total": len(properties),
+                "total": len(active_properties),
                 "properties": formatted_properties
             }
 
@@ -147,7 +161,7 @@ def search_properties():
             "details": str(e)
         }), 500
 
-# Función de búsqueda directa (como en tu código original)
+# Función de búsqueda directa
 def search_properties_func(**kwargs):
     """Función principal que busca propiedades"""
     try:
