@@ -2,3 +2,5 @@ flask
 openai
 requests
 typing-extensions
+pandas
+requests
