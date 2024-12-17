@@ -46,23 +46,19 @@ class PropertyManager:
         """
         Búsqueda de propiedades usando el endpoint específico de búsqueda
         """
-        # Determinar tipo de operación
         operation_type_id = self.get_operation_type_id(operation_type) if operation_type else '2'
 
+        # Estructura modificada según la documentación de Tokko
         search_data = {
-            "data": {
-                "current_localization_id": "25034",  # Villa Ballester
-                "current_localization_type": "division",
-                "operation_types": [operation_type_id],
-                "property_types": ["2", "13"],  # Departamentos y PH
-                "filters": [
-                    ["status", "=", "2"],  # Activa
-                    ["deleted_at", "=", None],  # No eliminada
-                    ["web_price", "=", True]  # Disponible al público
-                ],
-                "order_by": "price",
-                "order": "ASC"
-            }
+            "current_localization_id": "25034",  # Villa Ballester
+            "current_localization_type": "division",
+            "operation_types": [operation_type_id],
+            "property_types": ["2", "13"],  # Departamentos y PH
+            "status": ["2"],  # Activa
+            "price_from": None,
+            "price_to": None,
+            "currency": "ARS",
+            "with_prices": True
         }
 
         try:
