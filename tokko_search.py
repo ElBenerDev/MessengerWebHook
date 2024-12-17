@@ -2,6 +2,8 @@ from typing import Dict, List, Optional
 import requests
 import json
 import logging
+import pandas as pd
+import re
 from dataclasses import dataclass
 
 logging.basicConfig(level=logging.INFO)
@@ -30,39 +32,44 @@ class PropertyManager:
         self.api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
         self.api_url = "https://www.tokkobroker.com/api/v1/property/search"
 
+    def get_operation_type_id(self, operation_type: str) -> str:
+        """Convierte el tipo de operación en texto al ID correspondiente"""
+        operation_types = {
+            'alquiler': '2',
+            'venta': '1',
+            'temporal': '3'
+        }
+        return operation_types.get(operation_type.lower(), '2')
+
     def search_properties(self, 
-                         location_id: str = "25034",
-                         operation_type: List[str] = None,
-                         property_types: List[str] = None,
-                         price_from: Optional[float] = None,
-                         price_to: Optional[float] = None,
-                         rooms: Optional[int] = None) -> List[Dict]:
+                         operation_type: str = None,
+                         rooms: int = None,
+                         location_id: str = "25034") -> List[Dict]:
         """
-        Búsqueda flexible de propiedades
+        Búsqueda de propiedades con filtros específicos
         """
+        # Determinar tipo de operación
+        operation_type_id = self.get_operation_type_id(operation_type) if operation_type else '2'
+
         search_data = {
             "data": {
                 "current_localization_id": location_id,
                 "current_localization_type": "division",
-                "operation_types": operation_type or ["2"],  # 2 = Alquiler por defecto
-                "property_types": property_types or ["2", "13"],  # Departamentos y PH por defecto
+                "operation_types": [operation_type_id],
+                "property_types": ["2", "13"],  # Departamentos y PH
                 "filters": [
                     ["status", "=", "2"],  # Activa
                     ["deleted_at", "=", None],  # No eliminada
-                    ["web_price", "=", True],  # Disponible al público
+                    ["web_price", "=", True]  # Disponible al público
                 ],
                 "order_by": "price",
                 "order": "ASC"
             }
         }
 
-        # Agregar filtros opcionales
+        # Agregar filtro de ambientes si se especifica
         if rooms:
             search_data["data"]["filters"].append(["room_amount", "=", str(rooms)])
-        if price_from:
-            search_data["data"]["price_from"] = price_from
-        if price_to:
-            search_data["data"]["price_to"] = price_to
 
         try:
             response = requests.post(
@@ -81,32 +88,45 @@ class PropertyManager:
                 return []
 
             data = response.json()
-            return self.filter_valid_properties(data.get('objects', []))
+
+            # Guardar respuesta completa para análisis
+            with open('last_api_response.json', 'w') as f:
+                json.dump(data, f, indent=2)
+
+            return self.filter_properties(data.get('objects', []), operation_type)
 
         except Exception as e:
             logger.error(f"Error en búsqueda: {str(e)}")
             return []
 
-    def filter_valid_properties(self, properties: List[Dict]) -> List[Dict]:
-        """Filtra propiedades válidas según sus operaciones"""
-        valid_properties = []
+    def filter_properties(self, properties: List[Dict], operation_type: str) -> List[Dict]:
+        """Filtra las propiedades según el tipo de operación"""
+        operation_type_map = {
+            'alquiler': 'Rent',
+            'venta': 'Sale',
+            'temporal': 'Temporary'
+        }
+
+        target_operation = operation_type_map.get(operation_type.lower() if operation_type else 'alquiler')
+        filtered_properties = []
 
         for prop in properties:
             if not prop.get('operations'):
                 continue
 
-            # Verificar operaciones válidas
             for op in prop.get('operations', []):
-                if (op.get('prices') and 
+                if (op.get('operation_type') == target_operation and 
+                    op.get('prices') and 
                     op['prices'][0].get('price') > 0):
-                    valid_properties.append(prop)
+                    filtered_properties.append(prop)
                     break
 
-        return valid_properties
+        return filtered_properties
 
     def process_properties(self, raw_properties: List[Dict], operation_type: str) -> List[Property]:
         """Procesa las propiedades raw a objetos Property"""
         processed_properties = []
+        operation_display = 'Alquiler' if operation_type.lower() == 'alquiler' else 'Venta'
 
         for prop in raw_properties:
             # Verificar operaciones
@@ -116,9 +136,10 @@ class PropertyManager:
 
             # Encontrar la operación correcta
             operation = None
+            target_type = 'Rent' if operation_type.lower() == 'alquiler' else 'Sale'
+
             for op in operations:
-                op_type = 'Rent' if operation_type.lower() == 'alquiler' else 'Sale'
-                if op.get('operation_type') == op_type:
+                if op.get('operation_type') == target_type:
                     operation = op
                     break
 
@@ -126,10 +147,6 @@ class PropertyManager:
                 continue
 
             price_info = operation['prices'][0]
-
-            # Solo procesar si tiene precio y está disponible al público
-            if not price_info.get('price') or not prop.get('web_price'):
-                continue
 
             processed_properties.append(Property(
                 id=str(prop.get('id', '')),
@@ -139,17 +156,44 @@ class PropertyManager:
                 location=prop.get('location', {}).get('name', ''),
                 price=price_info.get('price', 0),
                 currency=price_info.get('currency', ''),
-                operation_type=operation_type,
+                operation_type=operation_display,
                 rooms=prop.get('room_amount', 0),
                 bathrooms=prop.get('bathroom_amount', 0),
-                surface=float(prop.get('total_surface', 0)),
-                expenses=float(prop.get('expenses', 0)),
+                surface=float(prop.get('total_surface', 0) or 0),
+                expenses=float(prop.get('expenses', 0) or 0),
                 photos=[p['image'] for p in prop.get('photos', [])[:3] if p.get('image')],
                 url=f"https://ficha.info/p/{prop.get('public_url', '').strip()}",
                 description=prop.get('description', '')
             ))
 
         return processed_properties
+
+def analyze_api_response(properties: List[Dict]) -> pd.DataFrame:
+    """Analiza y guarda la respuesta de la API en un CSV"""
+    properties_data = []
+
+    for prop in properties:
+        for operation in prop.get('operations', []):
+            if operation.get('prices'):
+                property_info = {
+                    'id': prop.get('id'),
+                    'title': prop.get('publication_title'),
+                    'type': prop.get('type', {}).get('name'),
+                    'address': prop.get('fake_address'),
+                    'location': prop.get('location', {}).get('name'),
+                    'operation_type': operation.get('operation_type'),
+                    'price': operation['prices'][0].get('price'),
+                    'currency': operation['prices'][0].get('currency'),
+                    'rooms': prop.get('room_amount'),
+                    'bathrooms': prop.get('bathroom_amount'),
+                    'surface': prop.get('total_surface'),
+                    'expenses': prop.get('expenses'),
+                }
+                properties_data.append(property_info)
+
+    df = pd.DataFrame(properties_data)
+    df.to_csv('properties_analysis.csv', index=False)
+    return df
 
 def format_property_message(properties: List[Property]) -> str:
     """Formatea las propiedades en un mensaje legible"""
@@ -179,46 +223,32 @@ def format_property_message(properties: List[Property]) -> str:
         if prop.photos:
             message += f"{prop.photos[0]}\n\n"
 
-    message += "¿Te gustaría ver más detalles de alguna de estas propiedades?"
-
     return message
-
-def interpret_user_query(query: str) -> dict:
-    """Interpreta la consulta del usuario y extrae parámetros de búsqueda"""
-    params = {}
-
-    # Detectar tipo de operación
-    if any(word in query.lower() for word in ['alquiler', 'alquilar', 'renta', 'rentar']):
-        params['operation_type'] = ["2"]
-    elif any(word in query.lower() for word in ['venta', 'comprar', 'compra']):
-        params['operation_type'] = ["1"]
-
-    # Detectar tipo de propiedad
-    if 'departamento' in query.lower() or 'depto' in query.lower():
-        params['property_types'] = ["2"]
-    elif 'casa' in query.lower():
-        params['property_types'] = ["3"]
-    elif 'ph' in query.lower():
-        params['property_types'] = ["13"]
-
-    # Detectar cantidad de ambientes
-    import re
-    ambient_match = re.search(r'(\d+)\s*ambientes?', query.lower())
-    if ambient_match:
-        params['rooms'] = int(ambient_match.group(1))
-
-    return params
 
 def search_properties(query: str) -> str:
     """Función principal de búsqueda"""
+    # Detectar tipo de operación
+    operation_type = None
+    if any(word in query.lower() for word in ['alquiler', 'alquilar', 'renta']):
+        operation_type = 'alquiler'
+    elif any(word in query.lower() for word in ['venta', 'comprar', 'compra']):
+        operation_type = 'venta'
+
+    # Detectar cantidad de ambientes
+    rooms = None
+    rooms_match = re.search(r'(\d+)\s*ambientes?', query.lower())
+    if rooms_match:
+        rooms = int(rooms_match.group(1))
+
+    # Realizar búsqueda
     manager = PropertyManager()
-    search_params = interpret_user_query(query)
+    raw_properties = manager.search_properties(operation_type=operation_type, rooms=rooms)
 
-    # Determinar tipo de operación para el procesamiento
-    operation_type = 'Alquiler' if search_params.get('operation_type') == ["2"] else 'Venta'
+    # Analizar resultados
+    analyze_api_response(raw_properties)
 
-    raw_properties = manager.search_properties(**search_params)
-    properties = manager.process_properties(raw_properties, operation_type)
+    # Procesar y formatear resultados
+    properties = manager.process_properties(raw_properties, operation_type or 'alquiler')
     return format_property_message(properties)
 
 if __name__ == "__main__":
