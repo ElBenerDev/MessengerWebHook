@@ -17,14 +17,17 @@ class TokkoManager:
 
     def search_properties(self, **kwargs) -> Dict:
         """
-        Búsqueda de propiedades con parámetros flexibles
+        Búsqueda de propiedades con filtros adicionales para asegurar disponibilidad
         """
         try:
             # Preparar parámetros para la API
             params = {
                 "key": self.api_key,
                 "limit": kwargs.get('limit', 10),
-                "order_by": kwargs.get('order_by', '-publication_date')
+                "order_by": kwargs.get('order_by', '-publication_date'),
+                # Filtros adicionales para asegurar disponibilidad
+                "status": "Disponible",  # Asumiendo que existe este filtro
+                "deleted_at__isnull": True  # Propiedades no eliminadas
             }
 
             # Agregar todos los parámetros proporcionados
@@ -44,17 +47,22 @@ class TokkoManager:
             data = response.json()
             properties = data.get('objects', [])
 
-            if not properties:
+            # Filtrado adicional de propiedades
+            available_properties = [
+                prop for prop in properties 
+                if self._is_property_available(prop)
+            ]
+
+            if not available_properties:
                 return {
-                    "message": "No se encontraron propiedades",
+                    "message": "No se encontraron propiedades disponibles",
                     "total": 0,
                     "properties": []
                 }
 
-            # Devolver la respuesta completa de la API
             return {
-                "total": len(properties),
-                "properties": properties
+                "total": len(available_properties),
+                "properties": available_properties
             }
 
         except Exception as e:
@@ -64,31 +72,55 @@ class TokkoManager:
                 "details": str(e)
             }
 
+    def _is_property_available(self, prop: Dict) -> bool:
+        """
+        Verificar si una propiedad está realmente disponible
+        """
+        # Verificaciones múltiples de disponibilidad
+        checks = [
+            # Verificar que no esté eliminada
+            prop.get('deleted_at') is None,
+
+            # Verificar estado de publicación
+            prop.get('status', '').lower() in ['disponible', 'active', 'activa'],
+
+            # Verificar que tenga al menos una operación activa
+            any(
+                op.get('status', '').lower() in ['disponible', 'active', 'activa'] 
+                for op in prop.get('operations', [])
+            ),
+
+            # Verificar que tenga URL pública válida
+            prop.get('public_url', '').startswith('http')
+        ]
+
+        return all(checks)
+
 def search_properties(message: str = None, **kwargs) -> Dict:
     """
     Función para buscar propiedades
     """
     tokko_manager = TokkoManager()
 
+    # Mapeo de palabras clave a parámetros de API
+    keyword_mappings = {
+        'operation_type': {
+            'alquiler': 'Rent',
+            'renta': 'Rent',
+            'venta': 'Sale',
+            'compra': 'Sale'
+        },
+        'property_type': {
+            'departamento': 'Apartment',
+            'depto': 'Apartment',
+            'casa': 'House',
+            'ph': 'PH',
+            'terreno': 'Land'
+        }
+    }
+
     # Si se proporciona un mensaje, intentar extraer parámetros
     if message:
-        # Mapeo de palabras clave a parámetros de API
-        keyword_mappings = {
-            'operation_type': {
-                'alquiler': 'Rent',
-                'renta': 'Rent',
-                'venta': 'Sale',
-                'compra': 'Sale'
-            },
-            'property_type': {
-                'departamento': 'Apartment',
-                'depto': 'Apartment',
-                'casa': 'House',
-                'ph': 'PH',
-                'terreno': 'Land'
-            }
-        }
-
         # Convertir mensaje a minúsculas
         message_lower = message.lower()
 
@@ -103,5 +135,4 @@ def search_properties(message: str = None, **kwargs) -> Dict:
 
 if __name__ == "__main__":
     # Ejemplos de uso
-    print(search_properties("Busco departamento en alquiler"))
-    print(search_properties(operation_type="Rent", property_type="Apartment"))
+    print(search_properties("Busco departamento en alquiler en Villa Ballester"))
