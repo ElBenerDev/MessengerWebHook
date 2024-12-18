@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 from openai import OpenAI
 import os
 import time
-import json
 import logging
 from typing import Dict
 from tokko_search import search_properties
@@ -20,7 +19,6 @@ class ConversationManager:
         self.threads = {}
         self.active_runs = {}
         self.contexts = {}
-        self.last_search = {}
 
     def get_thread_id(self, user_id: str) -> str:
         if user_id not in self.threads:
@@ -62,7 +60,6 @@ class ConversationManager:
         search_keywords = ['buscar', 'encontrar', 'mostrar', 'ver', 'hay', 'alquiler', 'venta', 'departamento', 'depto']
         location_keywords = ['ballester', 'villa ballester']
 
-        # Verificar si el mensaje contiene palabras clave de búsqueda y ubicación
         has_search_intent = any(word in message.lower() for word in search_keywords)
         has_location = any(word in message.lower() for word in location_keywords)
 
@@ -102,16 +99,13 @@ def wait_for_run(thread_id: str, run_id: str, user_id: str, max_attempts: int = 
     return False
 
 def update_context_from_message(message: str, user_id: str):
-    """Actualiza el contexto basado en el mensaje del usuario"""
     context = conversation_manager.get_context(user_id)
 
-    # Detectar tipo de operación
     if any(word in message.lower() for word in ['alquiler', 'alquilar', 'renta', 'rentar']):
         conversation_manager.update_context(user_id, 'operation_type', 'Alquiler')
     elif any(word in message.lower() for word in ['venta', 'comprar', 'compra']):
         conversation_manager.update_context(user_id, 'operation_type', 'Venta')
 
-    # Detectar ubicación
     if any(word in message.lower() for word in ['ballester', 'villa ballester']):
         conversation_manager.update_context(user_id, 'location', 'Villa Ballester')
 
@@ -119,32 +113,22 @@ def generate_response_internal(message: str, user_id: str) -> str:
     try:
         thread_id = conversation_manager.get_thread_id(user_id)
 
-        # Actualizar contexto basado en el mensaje
         update_context_from_message(message, user_id)
 
-        # Verificar si debemos realizar una búsqueda
         if conversation_manager.should_search(user_id, message):
             search_results = search_properties(message)
             if search_results:
-                # Agregar los resultados al contexto de la conversación
-                client.beta.threads.messages.create(
-                    thread_id=thread_id,
-                    role="user",
-                    content=f"Resultados de búsqueda: {search_results}"
-                )
                 return search_results
 
         if conversation_manager.is_run_active(user_id):
             return "Por favor, espera mientras proceso tu mensaje anterior."
 
-        # Agregar el mensaje del usuario al thread
         client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=message
         )
 
-        # Crear y ejecutar el run
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=assistant_id
@@ -152,11 +136,9 @@ def generate_response_internal(message: str, user_id: str) -> str:
 
         conversation_manager.set_active_run(user_id, run.id)
 
-        # Esperar la respuesta
         if not wait_for_run(thread_id, run.id, user_id):
             return "Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta de nuevo."
 
-        # Obtener la respuesta del asistente
         messages = client.beta.threads.messages.list(thread_id=thread_id)
         for msg in messages.data:
             if msg.role == "assistant":
