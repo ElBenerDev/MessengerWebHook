@@ -1,11 +1,10 @@
-# assistant_server.py
 from flask import Flask, request, jsonify
 from openai import OpenAI
 import os
 import time
 import json
 import logging
-from typing import Dict, Optional, List
+from typing import Dict
 from tokko_search import search_properties
 
 logging.basicConfig(level=logging.INFO)
