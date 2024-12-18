@@ -1,175 +1,107 @@
 from flask import Flask, request, jsonify
 from openai import OpenAI
-import json
+from openai import AssistantEventHandler
+from typing_extensions import override
 import os
-import time
+import json
 import logging
-from tokko_search import search_properties
+from tokko_search import search_properties  # Importar la lógica de búsqueda
 
+# Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Configura tu cliente con la API key desde el entorno
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
-# Diccionario para almacenar el estado de la conversación de cada usuario
-user_states = {}
+# ID del asistente (debe configurarse como variable de entorno o directamente aquí)
+assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")  # Cambia esto si es necesario
 
-class ConversationManager:
+# Crear un manejador de eventos para manejar el stream de respuestas del asistente
+class EventHandler(AssistantEventHandler):
     def __init__(self):
-        self.threads = {}
-        self.active_runs = {}
+        super().__init__()  # Inicializar correctamente la clase base
+        self.assistant_message = ""  # Almacena el mensaje generado por el asistente
 
-    def get_thread_id(self, user_id: str) -> str:
-        if user_id not in self.threads:
-            thread = client.beta.threads.create()
-            self.threads[user_id] = thread.id
-        return self.threads[user_id]
+    @override
+    def on_text_created(self, text) -> None:
+        # Este evento se dispara cuando se crea texto en el flujo
+        print(f"Asistente: {text.value}", end="", flush=True)
+        self.assistant_message += text.value  # Agregar el texto al mensaje final
 
-    def is_run_active(self, user_id: str) -> bool:
-        return user_id in self.active_runs and self.active_runs[user_id] is not None
-
-    def set_active_run(self, user_id: str, run_id: str):
-        self.active_runs[user_id] = run_id
-
-    def clear_active_run(self, user_id: str):
-        self.active_runs[user_id] = None
-
-conversation_manager = ConversationManager()
-
-def wait_for_run(thread_id: str, run_id: str, user_id: str, max_attempts: int = 60) -> bool:
-    attempts = 0
-    while attempts < max_attempts:
-        try:
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run_id
-            )
-
-            if run_status.status == 'completed':
-                conversation_manager.clear_active_run(user_id)
-                return True
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                conversation_manager.clear_active_run(user_id)
-                return False
-
-            attempts += 1
-            time.sleep(1)
-
-        except Exception as e:
-            logger.error(f"Error checking run status: {str(e)}")
-            conversation_manager.clear_active_run(user_id)
-            return False
-
-    conversation_manager.clear_active_run(user_id)
-    return False
-
-def generate_response_internal(message: str, user_id: str) -> str:
-    try:
-        # Obtener el estado actual del usuario
-        user_state = user_states.get(user_id, {"step": 0, "data": {}})
-
-        # Paso 0: Inicio de la conversación
-        if user_state["step"] == 0:
-            if "buscar propiedades" in message.lower():
-                user_state["step"] = 1
-                user_states[user_id] = user_state
-                return (
-                    "Por favor, proporcione los siguientes parámetros para la búsqueda:\n"
-                    "- Tipos de operación (IDs separados por comas, por ejemplo: 1,2):"
-                )
-            else:
-                return "No entiendo tu mensaje. Por favor, escribe 'buscar propiedades' para comenzar."
-
-        # Paso 1: Tipos de operación
-        if user_state["step"] == 1:
-            try:
-                operation_types = [int(op.strip()) for op in message.split(",") if op.strip().isdigit()]
-                if not operation_types:
-                    return "Por favor, ingrese al menos un ID válido para los tipos de operación."
-                user_state["data"]["operation_types"] = operation_types
-                user_state["step"] = 2
-                user_states[user_id] = user_state
-                return (
-                    "Gracias. Ahora, proporcione los IDs de los tipos de propiedad (separados por comas, por ejemplo: 2,3):"
-                )
-            except Exception:
-                return "Hubo un error al procesar los tipos de operación. Por favor, intente de nuevo."
-
-        # Paso 2: Tipos de propiedad
-        if user_state["step"] == 2:
-            try:
-                property_types = [int(prop.strip()) for prop in message.split(",") if prop.strip().isdigit()]
-                if not property_types:
-                    return "Por favor, ingrese al menos un ID válido para los tipos de propiedad."
-                user_state["data"]["property_types"] = property_types
-                user_state["step"] = 3
-                user_states[user_id] = user_state
-                return (
-                    "Gracias. Ahora, ingrese el precio mínimo en USD (opcional, puede dejarlo vacío):"
-                )
-            except Exception:
-                return "Hubo un error al procesar los tipos de propiedad. Por favor, intente de nuevo."
-
-        # Paso 3: Precio mínimo
-        if user_state["step"] == 3:
-            try:
-                price_from = float(message.strip()) if message.strip() else None
-                user_state["data"]["price_from"] = price_from
-                user_state["step"] = 4
-                user_states[user_id] = user_state
-                return (
-                    "Gracias. Ahora, ingrese el precio máximo en USD (opcional, puede dejarlo vacío):"
-                )
-            except ValueError:
-                return "El precio mínimo debe ser un número válido. Por favor, intente de nuevo."
-
-        # Paso 4: Precio máximo
-        if user_state["step"] == 4:
-            try:
-                price_to = float(message.strip()) if message.strip() else None
-                user_state["data"]["price_to"] = price_to
-
-                # Realizar la búsqueda
-                search_params = user_state["data"]
-                results = search_properties(search_params)
-
-                # Limpiar el estado del usuario
-                user_states.pop(user_id, None)
-
-                # Verificar si hubo un error
-                if "error" in results:
-                    return f"Error en la búsqueda: {results['error']}"
-
-                # Devolver los resultados al usuario
-                return f"Resultados de la búsqueda:\n{json.dumps(results, indent=4)}"
-
-            except ValueError:
-                return "El precio máximo debe ser un número válido. Por favor, intente de nuevo."
-            except Exception as e:
-                return f"Hubo un error al realizar la búsqueda: {str(e)}"
-
-        return "No entiendo tu mensaje. Por favor, intenta de nuevo."
-
-    except Exception as e:
-        logger.error(f"Error en generate_response_internal: {str(e)}")
-        return f"Error al generar respuesta: {str(e)}"
+    @override
+    def on_text_delta(self, delta, snapshot):
+        # Este evento se dispara cuando el texto cambia o se agrega en el flujo
+        print(delta.value, end="", flush=True)
+        self.assistant_message += delta.value  # Agregar el texto al mensaje final
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
-    try:
-        data = request.json
-        if not data or 'message' not in data or 'sender_id' not in data:
-            return jsonify({'error': 'No message or sender_id provided'}), 400
+    data = request.json
+    user_message = data.get('message')
+    user_id = data.get('sender_id')
 
-        response = generate_response_internal(data['message'], data['sender_id'])
-        return jsonify({'response': response})
+    if not user_message or not user_id:
+        return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
+
+    try:
+        # Crear un nuevo hilo de conversación
+        thread = client.beta.threads.create()
+        print("Hilo creado:", thread)
+
+        # Verificar que el hilo se creó correctamente
+        if not thread or not hasattr(thread, "id"):
+            raise ValueError("No se pudo crear el hilo de conversación.")
+
+        # Enviar el mensaje del usuario al hilo
+        client.beta.threads.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=user_message
+        )
+
+        # Crear y manejar la respuesta del asistente
+        event_handler = EventHandler()  # Instancia del manejador de eventos
+        with client.beta.threads.runs.stream(
+            thread_id=thread.id,
+            assistant_id=assistant_id,
+            event_handler=event_handler,
+        ) as stream:
+            stream.until_done()  # Esperar a que el flujo termine
+
+        # Obtener el mensaje generado por el asistente
+        assistant_message = event_handler.assistant_message
+
+        # Verificar si el asistente solicita realizar la búsqueda
+        if "parametros:" in user_message.lower():
+            try:
+                # Extraer los parámetros del mensaje del usuario
+                params = json.loads(user_message.split("parametros:")[1].strip())
+
+                # Llamar a la función de búsqueda
+                results = search_properties(params)
+
+                # Verificar si hubo un error
+                if "error" in results:
+                    return jsonify({'response': f"Error en la búsqueda: {results['error']}"})
+
+                # Devolver los resultados al usuario
+                return jsonify({'response': f"Resultados de la búsqueda:\n{json.dumps(results, indent=4)}"})
+
+            except json.JSONDecodeError:
+                return jsonify({'response': "El formato de los parámetros no es válido. Por favor, envíalos en formato JSON."})
+            except Exception as e:
+                return jsonify({'response': f"Error al procesar los parámetros: {str(e)}"})
+
+        # Devolver la respuesta generada por el asistente
+        return jsonify({'response': assistant_message})
 
     except Exception as e:
-        logger.error(f"Error en generate_response: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        # Capturar cualquier error y devolverlo como respuesta
+        logger.error(f"Error al generar respuesta: {str(e)}")
+        return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
