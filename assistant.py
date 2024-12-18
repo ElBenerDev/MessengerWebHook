@@ -3,7 +3,6 @@ from openai import OpenAI
 import os
 import time
 import logging
-from typing import Dict
 from tokko_search import search_properties
 
 logging.basicConfig(level=logging.INFO)
@@ -13,143 +12,6 @@ app = Flask(__name__)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
-
-class ConversationManager:
-    def __init__(self):
-        self.threads = {}
-        self.active_runs = {}
-        self.contexts = {}
-
-    def get_thread_id(self, user_id: str) -> str:
-        if user_id not in self.threads:
-            thread = client.beta.threads.create()
-            self.threads[user_id] = thread.id
-            self.contexts[user_id] = {
-                "location": None,
-                "operation_type": None,
-                "property_type": None,
-                "price_range": None,
-                "last_search_time": None,
-                "search_attempted": False
-            }
-        return self.threads[user_id]
-
-    def is_run_active(self, user_id: str) -> bool:
-        return user_id in self.active_runs and self.active_runs[user_id] is not None
-
-    def set_active_run(self, user_id: str, run_id: str):
-        self.active_runs[user_id] = run_id
-
-    def clear_active_run(self, user_id: str):
-        self.active_runs[user_id] = None
-
-    def update_context(self, user_id: str, key: str, value: str):
-        if user_id in self.contexts:
-            self.contexts[user_id][key] = value
-            if key == 'operation_type':
-                self.contexts[user_id]['search_attempted'] = False
-
-    def get_context(self, user_id: str) -> Dict:
-        return self.contexts.get(user_id, {})
-
-    def should_search(self, user_id: str, message: str) -> bool:
-        context = self.get_context(user_id)
-        if context.get('search_attempted'):
-            return False
-
-        search_keywords = ['buscar', 'encontrar', 'mostrar', 'ver', 'hay', 'alquiler', 'venta', 'departamento', 'depto']
-        location_keywords = ['ballester', 'villa ballester']
-
-        has_search_intent = any(word in message.lower() for word in search_keywords)
-        has_location = any(word in message.lower() for word in location_keywords)
-
-        if has_search_intent and has_location:
-            context['search_attempted'] = True
-            return True
-
-        return False
-
-conversation_manager = ConversationManager()
-
-def wait_for_run(thread_id: str, run_id: str, user_id: str, max_attempts: int = 60) -> bool:
-    attempts = 0
-    while attempts < max_attempts:
-        try:
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run_id
-            )
-
-            if run_status.status == 'completed':
-                conversation_manager.clear_active_run(user_id)
-                return True
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                conversation_manager.clear_active_run(user_id)
-                return False
-
-            attempts += 1
-            time.sleep(1)
-
-        except Exception as e:
-            logger.error(f"Error checking run status: {str(e)}")
-            conversation_manager.clear_active_run(user_id)
-            return False
-
-    conversation_manager.clear_active_run(user_id)
-    return False
-
-def update_context_from_message(message: str, user_id: str):
-    context = conversation_manager.get_context(user_id)
-
-    if any(word in message.lower() for word in ['alquiler', 'alquilar', 'renta', 'rentar']):
-        conversation_manager.update_context(user_id, 'operation_type', 'Alquiler')
-    elif any(word in message.lower() for word in ['venta', 'comprar', 'compra']):
-        conversation_manager.update_context(user_id, 'operation_type', 'Venta')
-
-    if any(word in message.lower() for word in ['ballester', 'villa ballester']):
-        conversation_manager.update_context(user_id, 'location', 'Villa Ballester')
-
-def generate_response_internal(message: str, user_id: str) -> str:
-    try:
-        thread_id = conversation_manager.get_thread_id(user_id)
-
-        update_context_from_message(message, user_id)
-
-        if conversation_manager.should_search(user_id, message):
-            search_results = search_properties(message)
-            if search_results:
-                return search_results
-
-        if conversation_manager.is_run_active(user_id):
-            return "Por favor, espera mientras proceso tu mensaje anterior."
-
-        client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=message
-        )
-
-        run = client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=assistant_id
-        )
-
-        conversation_manager.set_active_run(user_id, run.id)
-
-        if not wait_for_run(thread_id, run.id, user_id):
-            return "Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta de nuevo."
-
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
-        for msg in messages.data:
-            if msg.role == "assistant":
-                return msg.content[0].text.value
-
-        return "No se pudo obtener una respuesta del asistente."
-
-    except Exception as e:
-        logger.error(f"Error en generate_response_internal: {str(e)}")
-        conversation_manager.clear_active_run(user_id)
-        return f"Error al generar respuesta: {str(e)}"
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -164,6 +26,18 @@ def generate_response():
     except Exception as e:
         logger.error(f"Error en generate_response: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+def generate_response_internal(message: str, user_id: str) -> str:
+    try:
+        # Aquí se puede agregar lógica adicional para manejar el mensaje
+        search_results = search_properties(message)
+        if search_results:
+            return str(search_results)  # Asegurarse de que sea un string
+
+        return "No se encontraron resultados para tu búsqueda."
+    except Exception as e:
+        logger.error(f"Error en generate_response_internal: {str(e)}")
+        return f"Error al generar respuesta: {str(e)}"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
