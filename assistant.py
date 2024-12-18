@@ -65,7 +65,7 @@ def wait_for_run(thread_id: str, run_id: str, user_id: str, max_attempts: int = 
 
 def generate_response_internal(message: str, user_id: str) -> str:
     try:
-        # Simular preguntas y respuestas para construir los parámetros de búsqueda
+        # Procesar el mensaje recibido
         if "buscar propiedades" in message.lower():
             # Preguntar al usuario los parámetros de búsqueda
             return (
@@ -91,10 +91,13 @@ def generate_response_internal(message: str, user_id: str) -> str:
                 # Devolver los resultados al usuario
                 return f"Resultados de la búsqueda:\n{json.dumps(results, indent=4)}"
 
+            except json.JSONDecodeError:
+                return "El formato de los parámetros no es válido. Por favor, envíalos en formato JSON."
             except Exception as e:
                 return f"Error al procesar los parámetros: {str(e)}"
 
-        return "No entiendo tu mensaje. Por favor, intenta de nuevo."
+        # Respuesta predeterminada si no se reconoce el mensaje
+        return "No entiendo tu mensaje. Por favor, intenta de nuevo. Escribe 'buscar propiedades' para comenzar."
 
     except Exception as e:
         logger.error(f"Error en generate_response_internal: {str(e)}")
