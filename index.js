@@ -11,9 +11,9 @@ const pythonServiceUrl = 'http://localhost:5000';
 app.use(express.json());
 
 async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
-    const FACEBOOK_PAGE_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+    const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
-    if (!FACEBOOK_PAGE_ACCESS_TOKEN) {
+    if (!WHATSAPP_ACCESS_TOKEN) {
         console.error("FACEBOOK_PAGE_ACCESS_TOKEN no está configurado en las variables de entorno.");
         return;
     }
@@ -30,7 +30,7 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
         const response = await axios.post(url, payload, {
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${FACEBOOK_PAGE_ACCESS_TOKEN}`,
+                'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
             },
         });
         console.log(`Mensaje enviado a ${recipientId}: ${message}`);
