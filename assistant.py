@@ -19,6 +19,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # ID del asistente (debe configurarse como variable de entorno o directamente aquí)
 assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")  # Cambia esto si es necesario
 
+# Diccionario para almacenar el thread_id de cada usuario
+user_threads = {}
+
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
@@ -47,17 +50,25 @@ def generate_response():
         return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
 
     try:
-        # Crear un nuevo hilo de conversación
-        thread = client.beta.threads.create()
-        print("Hilo creado:", thread)
+        # Verificar si ya existe un thread_id para este usuario
+        if user_id not in user_threads:
+            # Crear un nuevo hilo de conversación si no existe
+            thread = client.beta.threads.create()
+            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
 
-        # Verificar que el hilo se creó correctamente
-        if not thread or not hasattr(thread, "id"):
-            raise ValueError("No se pudo crear el hilo de conversación.")
+            # Verificar que el hilo se creó correctamente
+            if not thread or not hasattr(thread, "id"):
+                raise ValueError("No se pudo crear el hilo de conversación.")
 
-        # Enviar el mensaje del usuario al hilo
+            # Guardar el thread_id para este usuario
+            user_threads[user_id] = thread.id
+
+        # Obtener el thread_id del usuario
+        thread_id = user_threads[user_id]
+
+        # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
-            thread_id=thread.id,
+            thread_id=thread_id,
             role="user",
             content=user_message
         )
@@ -65,7 +76,7 @@ def generate_response():
         # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()  # Instancia del manejador de eventos
         with client.beta.threads.runs.stream(
-            thread_id=thread.id,
+            thread_id=thread_id,
             assistant_id=assistant_id,
             event_handler=event_handler,
         ) as stream:
