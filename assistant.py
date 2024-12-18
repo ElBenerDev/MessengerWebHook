@@ -19,26 +19,31 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # ID del asistente (debe configurarse como variable de entorno o directamente aquí)
 assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")  # Cambia esto si es necesario
 
+# Diccionario para almacenar el estado de la conversación de cada usuario
+user_states = {}
+
 # Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
-        super().__init__()  # Inicializar correctamente la clase base
+        super().__init__()
         self.assistant_message = ""  # Almacena el mensaje generado por el asistente
 
     @override
     def on_text_created(self, text) -> None:
         # Este evento se dispara cuando se crea texto en el flujo
-        print(f"Asistente: {text.value}", end="", flush=True)
-        self.assistant_message += text.value  # Agregar el texto al mensaje final
+        if text.value not in self.assistant_message:
+            print(f"Asistente: {text.value}", end="", flush=True)
+            self.assistant_message += text.value  # Agregar el texto al mensaje final
 
     @override
     def on_text_delta(self, delta, snapshot):
         # Este evento se dispara cuando el texto cambia o se agrega en el flujo
-        print(delta.value, end="", flush=True)
-        self.assistant_message += delta.value  # Agregar el texto al mensaje final
+        if delta.value not in self.assistant_message:
+            print(delta.value, end="", flush=True)
+            self.assistant_message += delta.value  # Agregar el texto al mensaje final
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
