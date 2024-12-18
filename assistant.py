@@ -5,7 +5,7 @@ from typing_extensions import override
 import os
 import json
 import logging
-from tokko_search import search_properties  # Importar la lógica de búsqueda
+from tokko_search import search_properties, format_properties_message  # Importar la lógica de búsqueda y formateo
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -103,8 +103,9 @@ def generate_response():
                 if "error" in results:
                     return jsonify({'response': f"Error en la búsqueda: {results['error']}"})
 
-                # Devolver los resultados al usuario
-                return jsonify({'response': f"Resultados de la búsqueda:\n{json.dumps(results, indent=4)}"})
+                # Formatear los resultados en un mensaje
+                response_message = format_properties_message(results)
+                return jsonify({'response': response_message})
 
             except json.JSONDecodeError:
                 return jsonify({'response': "El formato de los parámetros no es válido. Por favor, envíalos en formato JSON."})

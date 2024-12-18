@@ -48,7 +48,23 @@ def fetch_search_results(search_params):
         response = requests.get(endpoint, params=params)
         logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
-            return response.json()
+            results = response.json()
+            # Validar y limpiar los resultados
+            cleaned_results = []
+            for property in results.get("objects", []):
+                try:
+                    cleaned_results.append({
+                        "title": property.get("title", "Sin título"),
+                        "address": property.get("address", "Dirección no disponible"),
+                        "price": property.get("price", "Precio no disponible"),
+                        "surface": property.get("surface", "Superficie no especificada"),
+                        "details": property.get("description", "Sin detalles"),
+                        "image": property.get("image", "https://via.placeholder.com/150"),  # Imagen por defecto
+                        "url": property.get("url", "#")  # Enlace por defecto
+                    })
+                except Exception as e:
+                    logging.error(f"Error al procesar una propiedad: {str(e)}")
+            return cleaned_results
         else:
             logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
             logging.error(f"Respuesta del servidor: {response.text}")
@@ -87,3 +103,21 @@ def search_properties(params):
         return {"error": "No se pudieron obtener resultados desde la API de búsqueda."}
 
     return search_results
+
+def format_properties_message(properties):
+    """
+    Formatea los resultados de las propiedades en un mensaje legible.
+    """
+    if not properties:
+        return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
+
+    message = "He encontrado algunas opciones que se ajustan a tus necesidades:\n\n"
+    for i, property in enumerate(properties, start=1):
+        message += f"{i}. **{property['title']}**\n"
+        message += f"   - Dirección: {property['address']}\n"
+        message += f"   - Precio: {property['price']}\n"
+        message += f"   - Superficie: {property['surface']}\n"
+        message += f"   - Detalles: {property['details']}\n"
+        message += f"   - [Ver propiedad]({property['url']})\n"
+        message += f"   ![Imagen]({property['image']})\n\n"
+    return message
