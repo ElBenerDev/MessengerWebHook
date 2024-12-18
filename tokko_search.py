@@ -2,7 +2,8 @@ import requests
 import logging
 import sys
 import os
-from typing import Dict, Optional
+from typing import Dict, List, Optional
+import re
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,23 +18,27 @@ class TokkoManager:
 
     def search_properties(self, **kwargs) -> Dict:
         """
-        Búsqueda de propiedades con filtros adicionales para asegurar disponibilidad
+        Búsqueda de propiedades con filtros precisos
         """
         try:
             # Preparar parámetros para la API
             params = {
                 "key": self.api_key,
                 "limit": kwargs.get('limit', 10),
-                "order_by": kwargs.get('order_by', '-publication_date'),
-                # Filtros adicionales para asegurar disponibilidad
-                "status": "Disponible",  # Asumiendo que existe este filtro
-                "deleted_at__isnull": True  # Propiedades no eliminadas
+                "order_by": kwargs.get('order_by', '-publication_date')
             }
 
-            # Agregar todos los parámetros proporcionados
-            for key, value in kwargs.items():
-                if key not in ['limit', 'order_by', 'key']:
-                    params[key] = value
+            # Agregar parámetros de búsqueda específicos
+            search_params = [
+                'operation_type', 
+                'property_type', 
+                'location', 
+                'neighborhood'
+            ]
+
+            for param in search_params:
+                if param in kwargs:
+                    params[param] = kwargs[param]
 
             # Realizar solicitud a la API
             response = requests.get(self.api_url, params=params)
@@ -48,21 +53,18 @@ class TokkoManager:
             properties = data.get('objects', [])
 
             # Filtrado adicional de propiedades
-            available_properties = [
-                prop for prop in properties 
-                if self._is_property_available(prop)
-            ]
+            filtered_properties = self._filter_properties(properties, kwargs)
 
-            if not available_properties:
+            if not filtered_properties:
                 return {
-                    "message": "No se encontraron propiedades disponibles",
+                    "message": "No se encontraron propiedades que coincidan con los criterios",
                     "total": 0,
                     "properties": []
                 }
 
             return {
-                "total": len(available_properties),
-                "properties": available_properties
+                "total": len(filtered_properties),
+                "properties": filtered_properties
             }
 
         except Exception as e:
@@ -72,33 +74,60 @@ class TokkoManager:
                 "details": str(e)
             }
 
-    def _is_property_available(self, prop: Dict) -> bool:
+    def _filter_properties(self, properties: List[Dict], search_criteria: Dict) -> List[Dict]:
         """
-        Verificar si una propiedad está realmente disponible
+        Filtrado avanzado de propiedades
         """
-        # Verificaciones múltiples de disponibilidad
+        filtered_props = []
+
+        for prop in properties:
+            # Verificaciones de validez
+            if not self._is_valid_property(prop):
+                continue
+
+            # Verificar criterios de búsqueda específicos
+            matches_criteria = True
+            for key, value in search_criteria.items():
+                if key == 'operation_type':
+                    # Verificar tipo de operación en las operaciones de la propiedad
+                    if not any(op.get('operation_type') == value for op in prop.get('operations', [])):
+                        matches_criteria = False
+                        break
+
+                elif key == 'property_type':
+                    # Verificar tipo de propiedad
+                    if prop.get('type', {}).get('name') != value:
+                        matches_criteria = False
+                        break
+
+            if matches_criteria:
+                filtered_props.append(prop)
+
+        return filtered_props
+
+    def _is_valid_property(self, prop: Dict) -> bool:
+        """
+        Verificar si la propiedad es válida y está disponible
+        """
         checks = [
+            # Verificar que tenga URL pública válida
+            prop.get('public_url', '').startswith('http'),
+
             # Verificar que no esté eliminada
             prop.get('deleted_at') is None,
-
-            # Verificar estado de publicación
-            prop.get('status', '').lower() in ['disponible', 'active', 'activa'],
 
             # Verificar que tenga al menos una operación activa
             any(
                 op.get('status', '').lower() in ['disponible', 'active', 'activa'] 
                 for op in prop.get('operations', [])
-            ),
-
-            # Verificar que tenga URL pública válida
-            prop.get('public_url', '').startswith('http')
+            )
         ]
 
         return all(checks)
 
 def search_properties(message: str = None, **kwargs) -> Dict:
     """
-    Función para buscar propiedades
+    Función para buscar propiedades con extracción inteligente de parámetros
     """
     tokko_manager = TokkoManager()
 
@@ -115,7 +144,13 @@ def search_properties(message: str = None, **kwargs) -> Dict:
             'depto': 'Apartment',
             'casa': 'House',
             'ph': 'PH',
-            'terreno': 'Land'
+            'terreno': 'Land',
+            'monoambiente': 'Studio'
+        },
+        'location': {
+            'villa ballester': 'Villa Ballester',
+            'san martin': 'San Martín',
+            'martinez': 'Martinez'
         }
     }
 
@@ -136,3 +171,4 @@ def search_properties(message: str = None, **kwargs) -> Dict:
 if __name__ == "__main__":
     # Ejemplos de uso
     print(search_properties("Busco departamento en alquiler en Villa Ballester"))
+    print(search_properties(operation_type="Rent", property_type="Apartment"))
