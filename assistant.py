@@ -14,6 +14,9 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
+# Diccionario para almacenar el estado de la conversación de cada usuario
+user_states = {}
+
 class ConversationManager:
     def __init__(self):
         self.threads = {}
@@ -65,39 +68,90 @@ def wait_for_run(thread_id: str, run_id: str, user_id: str, max_attempts: int = 
 
 def generate_response_internal(message: str, user_id: str) -> str:
     try:
-        # Procesar el mensaje recibido
-        if "buscar propiedades" in message.lower():
-            # Preguntar al usuario los parámetros de búsqueda
-            return (
-                "Por favor, proporcione los siguientes parámetros para la búsqueda:\n"
-                "- Tipos de operación (IDs separados por comas, por ejemplo: 1,2):\n"
-                "- Tipos de propiedad (IDs separados por comas, por ejemplo: 2,3):\n"
-                "- Precio mínimo en USD (opcional):\n"
-                "- Precio máximo en USD (opcional):"
-            )
+        # Obtener el estado actual del usuario
+        user_state = user_states.get(user_id, {"step": 0, "data": {}})
 
-        # Procesar los parámetros enviados por el usuario
-        if "parametros:" in message.lower():
+        # Paso 0: Inicio de la conversación
+        if user_state["step"] == 0:
+            if "buscar propiedades" in message.lower():
+                user_state["step"] = 1
+                user_states[user_id] = user_state
+                return (
+                    "Por favor, proporcione los siguientes parámetros para la búsqueda:\n"
+                    "- Tipos de operación (IDs separados por comas, por ejemplo: 1,2):"
+                )
+            else:
+                return "No entiendo tu mensaje. Por favor, escribe 'buscar propiedades' para comenzar."
+
+        # Paso 1: Tipos de operación
+        if user_state["step"] == 1:
             try:
-                # Extraer los parámetros del mensaje del usuario
-                params = json.loads(message.split("parametros:")[1].strip())
+                operation_types = [int(op.strip()) for op in message.split(",") if op.strip().isdigit()]
+                if not operation_types:
+                    return "Por favor, ingrese al menos un ID válido para los tipos de operación."
+                user_state["data"]["operation_types"] = operation_types
+                user_state["step"] = 2
+                user_states[user_id] = user_state
+                return (
+                    "Gracias. Ahora, proporcione los IDs de los tipos de propiedad (separados por comas, por ejemplo: 2,3):"
+                )
+            except Exception:
+                return "Hubo un error al procesar los tipos de operación. Por favor, intente de nuevo."
 
-                # Llamar a la función de búsqueda
-                results = search_properties(params)
+        # Paso 2: Tipos de propiedad
+        if user_state["step"] == 2:
+            try:
+                property_types = [int(prop.strip()) for prop in message.split(",") if prop.strip().isdigit()]
+                if not property_types:
+                    return "Por favor, ingrese al menos un ID válido para los tipos de propiedad."
+                user_state["data"]["property_types"] = property_types
+                user_state["step"] = 3
+                user_states[user_id] = user_state
+                return (
+                    "Gracias. Ahora, ingrese el precio mínimo en USD (opcional, puede dejarlo vacío):"
+                )
+            except Exception:
+                return "Hubo un error al procesar los tipos de propiedad. Por favor, intente de nuevo."
 
+        # Paso 3: Precio mínimo
+        if user_state["step"] == 3:
+            try:
+                price_from = float(message.strip()) if message.strip() else None
+                user_state["data"]["price_from"] = price_from
+                user_state["step"] = 4
+                user_states[user_id] = user_state
+                return (
+                    "Gracias. Ahora, ingrese el precio máximo en USD (opcional, puede dejarlo vacío):"
+                )
+            except ValueError:
+                return "El precio mínimo debe ser un número válido. Por favor, intente de nuevo."
+
+        # Paso 4: Precio máximo
+        if user_state["step"] == 4:
+            try:
+                price_to = float(message.strip()) if message.strip() else None
+                user_state["data"]["price_to"] = price_to
+
+                # Realizar la búsqueda
+                search_params = user_state["data"]
+                results = search_properties(search_params)
+
+                # Limpiar el estado del usuario
+                user_states.pop(user_id, None)
+
+                # Verificar si hubo un error
                 if "error" in results:
                     return f"Error en la búsqueda: {results['error']}"
 
                 # Devolver los resultados al usuario
                 return f"Resultados de la búsqueda:\n{json.dumps(results, indent=4)}"
 
-            except json.JSONDecodeError:
-                return "El formato de los parámetros no es válido. Por favor, envíalos en formato JSON."
+            except ValueError:
+                return "El precio máximo debe ser un número válido. Por favor, intente de nuevo."
             except Exception as e:
-                return f"Error al procesar los parámetros: {str(e)}"
+                return f"Hubo un error al realizar la búsqueda: {str(e)}"
 
-        # Respuesta predeterminada si no se reconoce el mensaje
-        return "No entiendo tu mensaje. Por favor, intenta de nuevo. Escribe 'buscar propiedades' para comenzar."
+        return "No entiendo tu mensaje. Por favor, intenta de nuevo."
 
     except Exception as e:
         logger.error(f"Error en generate_response_internal: {str(e)}")
@@ -115,32 +169,6 @@ def generate_response():
 
     except Exception as e:
         logger.error(f"Error en generate_response: {str(e)}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/search-properties', methods=['POST'])
-def search_properties_endpoint():
-    """
-    Endpoint para realizar la búsqueda de propiedades interactuando con el usuario.
-    """
-    try:
-        data = request.json
-        if not data or 'parameters' not in data:
-            return jsonify({'error': 'No se proporcionaron parámetros de búsqueda'}), 400
-
-        # Obtener los parámetros de búsqueda desde la solicitud
-        search_params = data['parameters']
-
-        # Llamar a la función de búsqueda en tokko_search.py
-        results = search_properties(search_params)
-
-        # Verificar si hubo un error
-        if "error" in results:
-            return jsonify({'error': results["error"]}), 400
-
-        return jsonify({'results': results})
-
-    except Exception as e:
-        logger.error(f"Error en search_properties_endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
