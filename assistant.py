@@ -64,41 +64,39 @@ def wait_for_run(thread_id: str, run_id: str, user_id: str, max_attempts: int = 
 
 def generate_response_internal(message: str, user_id: str) -> str:
     try:
-        thread_id = conversation_manager.get_thread_id(user_id)
+        # Simular preguntas y respuestas para construir los parámetros de búsqueda
+        if "buscar propiedades" in message.lower():
+            # Preguntar al usuario los parámetros de búsqueda
+            return (
+                "Por favor, proporcione los siguientes parámetros para la búsqueda:\n"
+                "- Tipos de operación (IDs separados por comas, por ejemplo: 1,2):\n"
+                "- Tipos de propiedad (IDs separados por comas, por ejemplo: 2,3):\n"
+                "- Precio mínimo en USD (opcional):\n"
+                "- Precio máximo en USD (opcional):"
+            )
 
-        if conversation_manager.is_run_active(user_id):
-            return "Por favor, espera mientras proceso tu mensaje anterior."
+        # Procesar los parámetros enviados por el usuario
+        if "parametros:" in message.lower():
+            try:
+                # Extraer los parámetros del mensaje del usuario
+                params = json.loads(message.split("parametros:")[1].strip())
 
-        # Agregar el mensaje del usuario al thread
-        client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=message
-        )
+                # Llamar a la función de búsqueda
+                results = search_properties(params)
 
-        # Crear y ejecutar el run
-        run = client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=assistant_id
-        )
+                if "error" in results:
+                    return f"Error en la búsqueda: {results['error']}"
 
-        conversation_manager.set_active_run(user_id, run.id)
+                # Devolver los resultados al usuario
+                return f"Resultados de la búsqueda:\n{json.dumps(results, indent=4)}"
 
-        # Esperar la respuesta
-        if not wait_for_run(thread_id, run.id, user_id):
-            return "Lo siento, hubo un error al procesar tu mensaje. Por favor, intenta de nuevo."
+            except Exception as e:
+                return f"Error al procesar los parámetros: {str(e)}"
 
-        # Obtener la respuesta del asistente
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
-        for msg in messages.data:
-            if msg.role == "assistant":
-                return msg.content[0].text.value
-
-        return "No se pudo obtener una respuesta del asistente."
+        return "No entiendo tu mensaje. Por favor, intenta de nuevo."
 
     except Exception as e:
         logger.error(f"Error en generate_response_internal: {str(e)}")
-        conversation_manager.clear_active_run(user_id)
         return f"Error al generar respuesta: {str(e)}"
 
 @app.route('/generate-response', methods=['POST'])
@@ -113,6 +111,32 @@ def generate_response():
 
     except Exception as e:
         logger.error(f"Error en generate_response: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/search-properties', methods=['POST'])
+def search_properties_endpoint():
+    """
+    Endpoint para realizar la búsqueda de propiedades interactuando con el usuario.
+    """
+    try:
+        data = request.json
+        if not data or 'parameters' not in data:
+            return jsonify({'error': 'No se proporcionaron parámetros de búsqueda'}), 400
+
+        # Obtener los parámetros de búsqueda desde la solicitud
+        search_params = data['parameters']
+
+        # Llamar a la función de búsqueda en tokko_search.py
+        results = search_properties(search_params)
+
+        # Verificar si hubo un error
+        if "error" in results:
+            return jsonify({'error': results["error"]}), 400
+
+        return jsonify({'results': results})
+
+    except Exception as e:
+        logger.error(f"Error en search_properties_endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':

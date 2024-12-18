@@ -1,166 +1,89 @@
 import requests
 import logging
-import sys
-from typing import Dict, List
+import json
 
+# Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s %(levelname)s: %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-class TokkoManager:
-    def __init__(self):
-        self.api_key = "34430fc661d5b961de6fd53a9382f7a232de3ef0"  # Clave de API incrustada
-        self.api_url = "https://www.tokkobroker.com/api/v1/property/search"
+# Clave de la API de propiedades
+API_KEY = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
-    def search_properties(self, **kwargs) -> Dict:
-        """
-        Búsqueda de propiedades con filtros precisos
-        """
-        try:
-            # Preparar parámetros para la API
-            params = {
-                "key": self.api_key,
-                "limit": kwargs.get('limit', 10),
-                "order_by": kwargs.get('order_by', '-publication_date')
-            }
+# URL de la API de tipo de cambio (puedes usar otra fuente si prefieres)
+EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/USD"
 
-            # Agregar parámetros de búsqueda específicos
-            search_params = ['operation_type', 'property_type', 'location', 'neighborhood']
-            for param in search_params:
-                if param in kwargs:
-                    params[param] = kwargs[param]
-
-            # Realizar solicitud a la API
-            response = requests.get(self.api_url, params=params)
-
-            if response.status_code != 200:
-                return {
-                    "error": "No se pudo conectar con el sistema de búsqueda",
-                    "status_code": response.status_code
-                }
-
+def get_exchange_rate():
+    """
+    Obtiene el tipo de cambio actual de USD a ARS.
+    """
+    try:
+        response = requests.get(EXCHANGE_RATE_API_URL)
+        if response.status_code == 200:
             data = response.json()
-            properties = data.get('objects', [])
+            return data["rates"]["ARS"]  # Tipo de cambio de USD a ARS
+        else:
+            logging.error(f"Error al obtener el tipo de cambio. Código de estado: {response.status_code}")
+            return None
+    except Exception as e:
+        logging.exception("Error al conectarse a la API de tipo de cambio.")
+        return None
 
-            # Filtrado adicional de propiedades
-            filtered_properties = self._filter_properties(properties, kwargs)
-
-            if not filtered_properties:
-                return {
-                    "message": "No se encontraron propiedades que coincidan con los criterios",
-                    "total": 0,
-                    "properties": []
-                }
-
-            return {
-                "total": len(filtered_properties),
-                "properties": filtered_properties
-            }
-
-        except Exception as e:
-            logging.error(f"Error en búsqueda: {str(e)}")
-            return {
-                "error": "Ocurrió un error al buscar propiedades",
-                "details": str(e)
-            }
-
-    def _filter_properties(self, properties: List[Dict], search_criteria: Dict) -> List[Dict]:
-        """
-        Filtrado avanzado de propiedades
-        """
-        filtered_props = []
-
-        for prop in properties:
-            # Verificaciones de validez
-            if not self._is_valid_property(prop):
-                continue
-
-            # Verificar criterios de búsqueda específicos
-            matches_criteria = True
-            for key, value in search_criteria.items():
-                if key == 'operation_type':
-                    # Verificar tipo de operación en las operaciones de la propiedad
-                    if not any(op.get('operation_type') == value for op in prop.get('operations', [])):
-                        matches_criteria = False
-                        break
-
-                elif key == 'property_type':
-                    # Verificar tipo de propiedad
-                    if prop.get('type', {}).get('name') != value:
-                        matches_criteria = False
-                        break
-
-            if matches_criteria:
-                filtered_props.append(prop)
-
-        return filtered_props
-
-    def _is_valid_property(self, prop: Dict) -> bool:
-        """
-        Verificar si la propiedad es válida y está disponible
-        """
-        checks = [
-            # Verificar que tenga URL pública válida
-            prop.get('public_url', '').startswith('http'),
-
-            # Verificar que no esté eliminada
-            prop.get('deleted_at') is None,
-
-            # Verificar que tenga al menos una operación activa
-            any(
-                op.get('status', '').lower() in ['disponible', 'active', 'activa'] 
-                for op in prop.get('operations', [])
-            )
-        ]
-
-        return all(checks)
-
-def search_properties(message: str = None, **kwargs) -> Dict:
+def fetch_search_results(search_params):
     """
-    Función para buscar propiedades con extracción inteligente de parámetros
+    Función para realizar la búsqueda en la API con los parámetros seleccionados.
     """
-    tokko_manager = TokkoManager()
-
-    # Mapeo de palabras clave a parámetros de API
-    keyword_mappings = {
-        'operation_type': {
-            'alquiler': 'Rent',
-            'renta': 'Rent',
-            'venta': 'Sale',
-            'compra': 'Sale'
-        },
-        'property_type': {
-            'departamento': 'Apartment',
-            'depto': 'Apartment',
-            'casa': 'House',
-            'ph': 'PH',
-            'terreno': 'Land',
-            'monoambiente': 'Studio'
-        },
-        'location': {
-            'villa ballester': 'Villa Ballester',
-            'san martin': 'San Martín',
-            'martinez': 'Martinez'
+    endpoint = "https://www.tokkobroker.com/api/v1/property/search/"
+    try:
+        # Convertir los parámetros a JSON
+        data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
+        logging.info(f"JSON generado para la búsqueda: {data_param}")
+        params = {
+            "key": API_KEY,
+            "data": data_param,
+            "format": "json",
+            "limit": 20
         }
-    }
+        response = requests.get(endpoint, params=params)
+        logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
+            logging.error(f"Respuesta del servidor: {response.text}")
+            return None
+    except Exception as e:
+        logging.exception("Error al conectarse a la API de búsqueda.")
+        return None
 
-    # Si se proporciona un mensaje, intentar extraer parámetros
-    if message:
-        # Convertir mensaje a minúsculas
-        message_lower = message.lower()
+def search_properties(params):
+    """
+    Realiza la búsqueda de propiedades con los parámetros proporcionados.
+    """
+    # Obtener el tipo de cambio
+    exchange_rate = get_exchange_rate()
+    if not exchange_rate:
+        logging.error("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
+        return {"error": "No se pudo obtener el tipo de cambio. Intente nuevamente más tarde."}
 
-        # Buscar coincidencias de palabras clave
-        for param_type, keywords in keyword_mappings.items():
-            for keyword, value in keywords.items():
-                if keyword in message_lower:
-                    kwargs[param_type] = value
+    # Convertir precios de USD a ARS si están presentes
+    def process_price(price):
+        try:
+            return int(float(price) * exchange_rate) if price else None
+        except ValueError:
+            logging.error(f"El valor '{price}' no es un número válido.")
+            return None
 
-    # Realizar búsqueda
-    return tokko_manager.search_properties(**kwargs)
+    # Procesar los precios en los parámetros
+    if "price_from" in params:
+        params["price_from"] = process_price(params["price_from"])
+    if "price_to" in params:
+        params["price_to"] = process_price(params["price_to"])
 
-if __name__ == "__main__":
-    # Ejemplos de uso
-    print(search_properties("Busco departamento en alquiler en Villa Ballester"))
-    print(search_properties(operation_type="Rent", property_type="Apartment"))
+    # Realizar la búsqueda
+    search_results = fetch_search_results(params)
+    if not search_results:
+        return {"error": "No se pudieron obtener resultados desde la API de búsqueda."}
+
+    return search_results
