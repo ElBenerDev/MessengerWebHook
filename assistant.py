@@ -5,7 +5,7 @@ from typing_extensions import override
 import os
 import json
 import logging
-from tokko_search import fetch_search_results, format_properties_message, ask_user_for_parameters  # Importar la lógica de búsqueda y formateo
+from tokko_search import fetch_search_results, format_properties_message, ask_user_for_parameters
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -16,8 +16,8 @@ app = Flask(__name__)
 # Configura tu cliente con la API key desde el entorno
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ID del asistente (debe configurarse como variable de entorno o directamente aquí)
-assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")  # Cambia esto si es necesario
+# ID del asistente
+assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
 # Diccionario para almacenar el estado de la conversación de cada usuario
 user_states = {}
@@ -25,25 +25,22 @@ user_states = {}
 # Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
 
-# Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
         super().__init__()
-        self.assistant_message = ""  # Almacena el mensaje generado por el asistente
+        self.assistant_message = ""
 
     @override
     def on_text_created(self, text) -> None:
-        # Este evento se dispara cuando se crea texto en el flujo
         if text.value not in self.assistant_message:
             print(f"Asistente: {text.value}", end="", flush=True)
-            self.assistant_message += text.value  # Agregar el texto al mensaje final
+            self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
-        # Este evento se dispara cuando el texto cambia o se agrega en el flujo
         if delta.value not in self.assistant_message:
             print(delta.value, end="", flush=True)
-            self.assistant_message += delta.value  # Agregar el texto al mensaje final
+            self.assistant_message += delta.value
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -59,22 +56,14 @@ def generate_response():
     try:
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
-            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
-
-            # Verificar que el hilo se creó correctamente
-            if not thread or not hasattr(thread, "id"):
-                raise ValueError("No se pudo crear el hilo de conversación.")
-
-            # Guardar el thread_id para este usuario
             user_threads[user_id] = thread.id
 
-        # Obtener el thread_id del usuario
         thread_id = user_threads[user_id]
 
         # Verificar si hay una ejecución activa
-        if thread_id in user_states and user_states[thread_id] == "active":
+        if user_states.get(thread_id) == "active":
             logger.warning(f"El hilo {thread_id} ya tiene una ejecución activa. Ignorando el nuevo mensaje.")
             return jsonify({'response': "Estamos procesando tu solicitud anterior. Por favor, espera un momento."}), 429
 
@@ -89,37 +78,33 @@ def generate_response():
         )
 
         # Crear y manejar la respuesta del asistente
-        event_handler = EventHandler()  # Instancia del manejador de eventos
+        event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=thread_id,
             assistant_id=assistant_id,
             event_handler=event_handler,
         ) as stream:
-            stream.until_done()  # Esperar a que el flujo termine
+            stream.until_done()
 
-        # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Aquí se puede agregar lógica para buscar propiedades
-        if "quiero alquilar" in user_message.lower() or "quiero comprar" in user_message.lower():  # Detectar si el usuario quiere buscar propiedades
-            search_params = ask_user_for_parameters(user_message)  # Extraer parámetros de búsqueda del mensaje
+        # Lógica para buscar propiedades
+        if "quiero alquilar" in user_message.lower() or "quiero comprar" in user_message.lower():
+            search_params = ask_user_for_parameters(user_message)
             if search_params:
                 search_results = fetch_search_results(search_params)
                 formatted_message = format_properties_message(search_results)
-                assistant_message += f"\n\n{formatted_message}"  # Agregar resultados al mensaje del asistente
+                assistant_message += f"\n\n{formatted_message}"
         else:
-            # Respuesta para mensajes que no son solicitudes de búsqueda
             assistant_message += "\n\n¡Hola! ¿En qué puedo ayudarte hoy? Si buscas propiedades, por favor indícame cuántas habitaciones necesitas y tu presupuesto."
 
         # Marcar el hilo como inactivo
         user_states[thread_id] = "inactive"
 
-        # Devolver la respuesta generada por el asistente
         return jsonify({'response': assistant_message})
 
     except Exception as e:
-        # Capturar cualquier error y devolverlo como respuesta
         logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
