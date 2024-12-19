@@ -94,16 +94,22 @@ def format_properties_message(properties):
     """
     Formatea los resultados de las propiedades en un mensaje legible.
     """
-    if not properties:
+    if not properties or not properties.get("objects"):
         return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
 
     message = "He encontrado algunas opciones que se ajustan a tus necesidades:\n\n"
     for i, property in enumerate(properties.get("objects", []), start=1):
-        message += f"{i}. **{property.get('title', 'Sin título')}**\n"
-        message += f"   - Dirección: {property.get('address', 'Dirección no disponible')}\n"
-        message += f"   - Precio: {property.get('price', 'Precio no disponible')} ARS\n"
-        message += f"   - Superficie: {property.get('surface', 'Superficie no especificada')}\n"
-        message += f"   - Detalles: {property.get('description', 'Sin detalles')}\n"
+        title = property.get('title', 'Sin título')
+        address = property.get('address', 'Dirección no disponible')
+        price_info = property.get('operations', [{}])[0].get('prices', [{}])[0]
+        price = price_info.get('price', 'Precio no disponible')
+        currency = price_info.get('currency', 'ARS')
+        image_url = property.get('photos', [{}])[0].get('image', 'https://via.placeholder.com/150')  # Usar la primera imagen
+
+        message += f"{i}. **{title}**\n"
+        message += f"   - Dirección: {address}\n"
+        message += f"   - Precio: {price} {currency}\n"
         message += f"   - [Ver propiedad]({property.get('url', '#')})\n"
-        message += f"   ![Imagen]({property.get('image', 'https://via.placeholder.com/150')})\n\n"
+        message += f"   ![Imagen]({image_url})\n\n"
+
     return message
