@@ -1,6 +1,7 @@
 import requests
 import logging
 import json
+import re
 
 # Configuración de logging
 logging.basicConfig(
@@ -92,13 +93,13 @@ def ask_user_for_parameters(user_message):
     construir los parámetros de búsqueda.
     """
     try:
-        # Extraer el número de habitaciones y el presupuesto del mensaje
-        parts = user_message.split(',')
-        if len(parts) != 2:
-            raise ValueError("Formato de mensaje incorrecto. Debe ser 'número de habitaciones, presupuesto'.")
+        # Usar una expresión regular para extraer el número de habitaciones y el presupuesto
+        match = re.match(r"(\d+)\s*,\s*(\d+)\s*USD", user_message)
+        if not match:
+            raise ValueError("Formato de mensaje incorrecto. Debe ser 'número de habitaciones, presupuesto en USD'.")
 
-        num_rooms = int(parts[0].strip())
-        budget = float(parts[1].strip().replace(" USD", "").replace(",", ""))  # Eliminar "USD" y comas
+        num_rooms = int(match.group(1))
+        budget = float(match.group(2))
 
         # Obtener el tipo de cambio
         exchange_rate = get_exchange_rate()
@@ -124,11 +125,26 @@ def ask_user_for_parameters(user_message):
         logging.error(f"Error al procesar los parámetros de búsqueda: {str(e)}")
         return None
 
+def main(user_message):
+    logging.info("Iniciando el programa.")
+
+    # Paso 1: Procesar el mensaje del usuario para obtener los parámetros de búsqueda
+    search_params = ask_user_for_parameters(user_message)
+    if not search_params:
+        return "No se pudieron obtener los parámetros de búsqueda."
+
+    # Paso 2: Realizar la búsqueda con los parámetros seleccionados
+    logging.info("Realizando la búsqueda con los parámetros seleccionados...")
+    search_results = fetch_search_results(search_params)
+
+    if not search_results:
+        return "No se pudieron obtener resultados desde la API de búsqueda."
+
+    # Paso 3: Formatear y devolver los resultados de la búsqueda
+    return format_properties_message(search_results)
+
 if __name__ == "__main__":
     # Ejemplo de uso
     user_message = "2, 1000000 USD"  # Simulación de entrada del usuario
-    search_params = ask_user_for_parameters(user_message)
-    if search_params:
-        print("Parámetros de búsqueda:", search_params)
-        search_results = fetch_search_results(search_params)
-        print("Resultados de búsqueda:", json.dumps(search_results, indent=4))
+    result_message = main(user_message)
+    print(result_message)
