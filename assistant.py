@@ -5,7 +5,7 @@ from typing_extensions import override
 import os
 import json
 import logging
-from tokko_search import search_properties, format_properties_message, ask_user_for_parameters  # Importar la lógica de búsqueda y formateo
+from tokko_search import fetch_search_results, format_properties_message, ask_user_for_parameters  # Importar la lógica de búsqueda y formateo
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -105,7 +105,7 @@ def generate_response():
         if "quiero alquilar" in user_message.lower() or "quiero comprar" in user_message.lower():  # Detectar si el usuario quiere buscar propiedades
             search_params = ask_user_for_parameters(user_message)  # Extraer parámetros de búsqueda del mensaje
             if search_params:
-                search_results = search_properties(search_params)
+                search_results = fetch_search_results(search_params)
                 formatted_message = format_properties_message(search_results)
                 assistant_message += f"\n\n{formatted_message}"  # Agregar resultados al mensaje del asistente
         else:
