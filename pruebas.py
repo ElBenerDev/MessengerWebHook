@@ -5,7 +5,7 @@ import json
 # Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s 1- %(levelname)s - %(message)s"
 )
 
 # Clave de la API de propiedades

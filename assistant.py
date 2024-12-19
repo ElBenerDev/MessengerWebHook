@@ -102,7 +102,7 @@ def generate_response():
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
         # Aquí se puede agregar lógica para buscar propiedades
-        if "buscar propiedades" in user_message.lower():  # Detectar si el usuario quiere buscar propiedades
+        if "quiero alquilar" in user_message.lower() or "quiero comprar" in user_message.lower():  # Detectar si el usuario quiere buscar propiedades
             search_params = ask_user_for_parameters(user_message)  # Extraer parámetros de búsqueda del mensaje
             if search_params:
                 search_results = search_properties(search_params)
@@ -119,26 +119,6 @@ def generate_response():
         # Capturar cualquier error y devolverlo como respuesta
         logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
-
-def ask_user_for_parameters(user_message):
-    """
-    Función para extraer parámetros de búsqueda del mensaje del usuario.
-    Aquí se puede implementar la lógica para analizar el mensaje y
-    construir los parámetros de búsqueda.
-    """
-    # Esta es una implementación básica. Debes mejorarla para extraer
-    # los parámetros de búsqueda de manera más efectiva.
-
-    # Ejemplo de parámetros de búsqueda ficticios
-    search_params = {
-        "operation_types": [1],  # Venta
-        "property_types": [2],   # Apartamento
-        "price_from": 10000,     # Precio mínimo
-        "price_to": 10000,       # Precio máximo
-        "currency": "ARS"
-    }
-
-    return search_params
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

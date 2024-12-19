@@ -38,7 +38,7 @@ def fetch_search_results(search_params):
     try:
         # Convertir los parámetros a JSON
         data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
-        logging.info(f"JSON generado para la búsqueda: {data_param}")
+        logging.info(f"JSON generado para la búsqueda: {data_param}")  # Depuración
         params = {
             "key": API_KEY,
             "data": data_param,
@@ -48,9 +48,7 @@ def fetch_search_results(search_params):
         response = requests.get(endpoint, params=params)
         logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
-            results = response.json()
-            logging.info(f"Resultados de búsqueda recibidos: {results}")
-            return results  # Devolver directamente los resultados
+            return response.json()
         else:
             logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
             logging.error(f"Respuesta del servidor: {response.text}")
@@ -87,33 +85,50 @@ def format_properties_message(properties):
     message += "Si estás interesado en alguna de estas propiedades o tienes otra consulta, no dudes en decírmelo. ¡Estoy aquí para ayudar! 😊"
     return message
 
-def search_properties(params):
+def ask_user_for_parameters(user_message):
     """
-    Realiza la búsqueda de propiedades con los parámetros proporcionados.
+    Función para extraer parámetros de búsqueda del mensaje del usuario.
+    Aquí se puede implementar la lógica para analizar el mensaje y
+    construir los parámetros de búsqueda.
     """
-    # Obtener el tipo de cambio
-    exchange_rate = get_exchange_rate()
-    if not exchange_rate:
-        logging.error("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
-        return {"error": "No se pudo obtener el tipo de cambio. Intente nuevamente más tarde."}
+    try:
+        # Extraer el número de habitaciones y el presupuesto del mensaje
+        parts = user_message.split(',')
+        if len(parts) != 2:
+            raise ValueError("Formato de mensaje incorrecto. Debe ser 'número de habitaciones, presupuesto'.")
 
-    # Realizar la búsqueda
-    search_results = fetch_search_results(params)
-    if not search_results:
-        return {"error": "No se pudieron obtener resultados desde la API de búsqueda."}
+        num_rooms = int(parts[0].strip())
+        budget = float(parts[1].strip().replace(" USD", "").replace(",", ""))  # Eliminar "USD" y comas
 
-    # Convertir precios de USD a ARS si están presentes
-    def process_price(price):
-        try:
-            return int(float(price) * exchange_rate) if price else None
-        except ValueError:
-            logging.error(f"El valor '{price}' no es un número válido.")
+        # Obtener el tipo de cambio
+        exchange_rate = get_exchange_rate()
+        if not exchange_rate:
+            print("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
             return None
 
-    # Procesar los precios en los resultados
-    for property in search_results.get("objects", []):
-        if "price" in property:
-            property["price"] = process_price(property["price"])
+        # Convertir el presupuesto a ARS
+        budget_ars = int(budget * exchange_rate)
 
-    logging.info(f"Resultados de búsqueda procesados: {search_results}")
-    return search_results
+        # Construir los parámetros de búsqueda
+        search_params = {
+            "operation_types": [2],  # Alquiler
+            "property_types": [2],    # Apartamento
+            "price_from": 0,          # Precio mínimo
+            "price_to": budget_ars,   # Precio máximo en ARS
+            "currency": "ARS"         # La búsqueda se realiza en ARS
+        }
+
+        return search_params
+
+    except Exception as e:
+        logging.error(f"Error al procesar los parámetros de búsqueda: {str(e)}")
+        return None
+
+if __name__ == "__main__":
+    # Ejemplo de uso
+    user_message = "2, 1000000 USD"  # Simulación de entrada del usuario
+    search_params = ask_user_for_parameters(user_message)
+    if search_params:
+        print("Parámetros de búsqueda:", search_params)
+        search_results = fetch_search_results(search_params)
+        print("Resultados de búsqueda:", json.dumps(search_results, indent=4))
