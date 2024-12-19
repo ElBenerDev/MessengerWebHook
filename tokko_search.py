@@ -1,4 +1,3 @@
-# busqueda.py
 import requests
 import logging
 import json
@@ -93,9 +92,11 @@ def ask_user_for_parameters():
         print("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
         return None
 
+    # Establecer el precio mínimo en 0 USD
+    price_from = 0  # Precio mínimo fijo en 0 USD
+
     # Rango de precios
-    print("\nIngrese los precios en USD. Se convertirán automáticamente a ARS para la búsqueda.")
-    price_from = input("Ingrese el precio mínimo en USD (o deje vacío para omitir): ")
+    print("\nIngrese el precio máximo en USD. Se convertirá automáticamente a ARS para la búsqueda.")
     price_to = input("Ingrese el precio máximo en USD (o deje vacío para omitir): ")
 
     # Procesar los valores de precio para eliminar comas, convertirlos a enteros y luego a ARS
@@ -106,8 +107,8 @@ def ask_user_for_parameters():
             print(f"El valor '{price}' no es un número válido. Ignorando este valor.")
             return None
 
-    price_from = process_price(price_from)
-    price_to = process_price(price_to)
+    price_from = process_price(str(price_from))  # Convertir el precio mínimo a ARS
+    price_to = process_price(price_to)  # Convertir el precio máximo a ARS
 
     # Construir los parámetros de búsqueda
     search_params = {
