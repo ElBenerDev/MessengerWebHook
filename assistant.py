@@ -76,7 +76,7 @@ def generate_response():
         # Verificar si hay una ejecución activa
         if thread_id in user_states and user_states[thread_id] == "active":
             logger.warning(f"El hilo {thread_id} ya tiene una ejecución activa. Ignorando el nuevo mensaje.")
-            return jsonify({'response': "Por favor, espera a que se complete la respuesta anterior."}), 429
+            return jsonify({'response': "Estamos procesando tu solicitud anterior. Por favor, espera un momento."}), 429
 
         # Marcar el hilo como activo
         user_states[thread_id] = "active"
@@ -133,8 +133,8 @@ def ask_user_for_parameters(user_message):
     search_params = {
         "operation_types": [1],  # Venta
         "property_types": [2],   # Apartamento
-        "price_from": 0,    # Precio mínimo
-        "price_to": 500000,      # Precio máximo
+        "price_from": 10000,     # Precio mínimo
+        "price_to": 10000,       # Precio máximo
         "currency": "ARS"
     }
 
