@@ -5,7 +5,7 @@ from typing_extensions import override
 import os
 import json
 import logging
-from tokko_search import search_properties, format_properties_message  # Importar la lógica de búsqueda y formateo
+from tokko_search import search_properties, format_properties_message, ask_user_for_parameters  # Importar la lógica de búsqueda y formateo
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -108,6 +108,9 @@ def generate_response():
                 search_results = search_properties(search_params)
                 formatted_message = format_properties_message(search_results)
                 assistant_message += f"\n\n{formatted_message}"  # Agregar resultados al mensaje del asistente
+        else:
+            # Respuesta para mensajes que no son solicitudes de búsqueda
+            assistant_message += "\n\n¡Hola! ¿En qué puedo ayudarte hoy? Si buscas propiedades, por favor indícame cuántas habitaciones necesitas y tu presupuesto."
 
         # Marcar el hilo como inactivo
         user_states[thread_id] = "inactive"
