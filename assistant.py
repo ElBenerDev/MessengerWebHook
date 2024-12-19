@@ -133,7 +133,7 @@ def ask_user_for_parameters(user_message):
     search_params = {
         "operation_types": [1],  # Venta
         "property_types": [2],   # Apartamento
-        "price_from": 100000,    # Precio mínimo
+        "price_from": 0,    # Precio mínimo
         "price_to": 500000,      # Precio máximo
         "currency": "ARS"
     }
