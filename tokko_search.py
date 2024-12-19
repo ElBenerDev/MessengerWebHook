@@ -38,16 +38,19 @@ def fetch_search_results(search_params):
     try:
         # Convertir los parámetros a JSON
         data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
-        print(f"JSON generado para la búsqueda: {data_param}")  # Depuración
         params = {
             "key": API_KEY,
             "data": data_param,
             "format": "json",
             "limit": 20
         }
+        # Construir la URL completa para la solicitud
+        request_url = f"{endpoint}?key={API_KEY}&data={data_param}&format=json&limit=20"
+        logging.info(f"Solicitud enviada a la API de búsqueda: {request_url}")  # Log de la URL
+
         response = requests.get(endpoint, params=params)
-        logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
+            logging.info(f"Respuesta de la API: {response.text}")  # Log de la respuesta
             return response.json()
         else:
             logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
@@ -65,7 +68,7 @@ def ask_user_for_parameters():
     print("\nTipos de operación disponibles:")
     print("  1: Sale")
     print("  2: Rent")
-    selected_operations = input("Seleccione los IDs de tipos de operación (separados por comas, o deje vacío para usar todos): ")
+    selected_operations = input("Seleccione los IDs de tipos de operación (separados por comas, o deje vacío para usar solo alquiler): ")
     if selected_operations:
         operation_ids = [int(op.strip()) for op in selected_operations.split(",") if op.strip().isdigit()]
     else:
