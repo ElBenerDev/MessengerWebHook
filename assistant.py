@@ -73,6 +73,14 @@ def generate_response():
         # Obtener el thread_id del usuario
         thread_id = user_threads[user_id]
 
+        # Verificar si hay una ejecución activa
+        if thread_id in user_states and user_states[thread_id] == "active":
+            logger.warning(f"El hilo {thread_id} ya tiene una ejecución activa. Ignorando el nuevo mensaje.")
+            return jsonify({'response': "Por favor, espera a que se complete la respuesta anterior."}), 429
+
+        # Marcar el hilo como activo
+        user_states[thread_id] = "active"
+
         # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
             thread_id=thread_id,
@@ -93,31 +101,8 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Verificar si el asistente solicita realizar la búsqueda
-        if "parametros:" in user_message.lower():
-            try:
-                # Extraer los parámetros del mensaje del usuario
-                params = json.loads(user_message.split("parametros:")[1].strip())
-                logger.info(f"Parámetros de búsqueda: {params}")  # Registro de parámetros
-
-                # Llamar a la función de búsqueda
-                results = search_properties(params)
-                logger.info(f"Resultados de búsqueda: {results}")
-
-                # Verificar si hubo un error
-                if "error" in results:
-                    return jsonify({'response': f"Error en la búsqueda: {results['error']}"})
-
-                # Formatear los resultados en un mensaje
-                response_message = format_properties_message(results)
-                logger.info(f"Mensaje de respuesta formateado: {response_message}")
-                return jsonify({'response': response_message})
-
-            except json.JSONDecodeError:
-                return jsonify({'response': "El formato de los parámetros no es válido. Por favor, envíalos en formato JSON."})
-            except Exception as e:
-                logger.error(f"Error al procesar los parámetros: {str(e)}")
-                return jsonify({'response': f"Error al procesar los parámetros: {str(e)}"})
+        # Marcar el hilo como inactivo
+        user_states[thread_id] = "inactive"
 
         # Devolver la respuesta generada por el asistente
         return jsonify({'response': assistant_message})
