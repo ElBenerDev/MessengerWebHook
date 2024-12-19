@@ -11,7 +11,7 @@ logging.basicConfig(
 # Clave de la API de propiedades
 API_KEY = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
-# URL de la API de tipo de cambio (puedes usar otra fuente si prefieres)
+# URL de la API de tipo de cambio
 EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/USD"
 
 def get_exchange_rate():
@@ -69,7 +69,7 @@ def ask_user_for_parameters():
     if selected_operations:
         operation_ids = [int(op.strip()) for op in selected_operations.split(",") if op.strip().isdigit()]
     else:
-        operation_ids = [1, 2]  # Usar todos por defecto
+        operation_ids = [2]  # Usar solo alquiler por defecto
 
     # Tipos de propiedad
     print("\nTipos de propiedad disponibles:")
@@ -84,7 +84,7 @@ def ask_user_for_parameters():
     if selected_properties:
         property_ids = [int(prop.strip()) for prop in selected_properties.split(",") if prop.strip().isdigit()]
     else:
-        property_ids = [7, 13, 2, 3, 10, 1, 12]  # Usar todos por defecto
+        property_ids = [2]  # Usar solo departamentos por defecto
 
     # Obtener el tipo de cambio
     exchange_rate = get_exchange_rate()
@@ -136,13 +136,22 @@ def main():
     print("\nRealizando la búsqueda con los parámetros seleccionados...")
     search_results = fetch_search_results(search_params)
 
-    if not search_results:
+    if not search_results or 'objects' not in search_results or not search_results['objects']:
         print("No se pudieron obtener resultados desde la API de búsqueda.")
         return
 
     # Paso 3: Mostrar los resultados de la búsqueda
     print("\nResultados de la búsqueda:")
-    print(json.dumps(search_results, indent=4))
+    for obj in search_results['objects']:
+        # Filtrar solo los resultados de alquiler
+        for operation in obj.get('operations', []):
+            if operation['operation_type'] == 'Rent':
+                price = operation['prices'][0]['price']
+                print(f"Ubicación: {obj['address']}")
+                print(f"Precio: {price} ARS")
+                print(f"Descripción: {obj['description']}")
+                print(f"Link: https://ficha.info/p/{obj['id']}")
+                print("-----")
 
 if __name__ == "__main__":
     main()
