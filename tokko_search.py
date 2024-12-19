@@ -105,11 +105,15 @@ def format_properties_message(properties):
         price = price_info.get('price', 'Precio no disponible')
         currency = price_info.get('currency', 'ARS')
         image_url = property.get('photos', [{}])[0].get('image', 'https://via.placeholder.com/150')  # Usar la primera imagen
+        description = property.get('description', 'Descripción no disponible').strip().replace('\n', ' ')  # Limpiar la descripción
 
+        # Formatear el mensaje de manera más clara
         message += f"{i}. **{title}**\n"
-        message += f"   - Dirección: {address}\n"
+        message += f"   - Ubicación: {address}\n"
         message += f"   - Precio: {price} {currency}\n"
-        message += f"   - [Ver propiedad]({property.get('url', '#')})\n"
+        message += f"   - Descripción: {description}\n"
+        message += f"   - [Detalles y fotos aquí](https://icha.info/pebxTxQQZ)\n"  # Cambia esto por la URL real si está disponible
         message += f"   ![Imagen]({image_url})\n\n"
 
+    message += "Si estás interesado en alguna de estas propiedades o tienes otra consulta, no dudes en decírmelo. ¡Estoy aquí para ayudar! 😊"
     return message
