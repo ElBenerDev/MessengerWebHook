@@ -11,7 +11,7 @@ logging.basicConfig(
 # Clave de la API de propiedades
 API_KEY = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
-# URL de la API de tipo de cambio (puedes usar otra fuente si prefieres)
+# URL de la API de tipo de cambio
 EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/USD"
 
 def get_exchange_rate():
@@ -59,6 +59,34 @@ def fetch_search_results(search_params):
         logging.exception("Error al conectarse a la API de búsqueda.")
         return None
 
+def format_properties_message(properties):
+    """
+    Formatea los resultados de las propiedades en un mensaje legible.
+    """
+    if not properties or not properties.get("objects"):
+        return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
+
+    message = "He encontrado algunas opciones que se ajustan a tus necesidades:\n\n"
+    for i, property in enumerate(properties.get("objects", []), start=1):
+        title = property.get('title', 'Sin título')
+        address = property.get('address', 'Dirección no disponible')
+        price_info = property.get('operations', [{}])[0].get('prices', [{}])[0]
+        price = price_info.get('price', 'Precio no disponible')
+        currency = price_info.get('currency', 'ARS')
+        image_url = property.get('photos', [{}])[0].get('image', 'https://via.placeholder.com/150')  # Usar la primera imagen
+        description = property.get('description', 'Descripción no disponible').strip().replace('\n', ' ')  # Limpiar la descripción
+
+        # Formatear el mensaje de manera más clara
+        message += f"{i}. **{title}**\n"
+        message += f"   - Ubicación: {address}\n"
+        message += f"   - Precio: {price} {currency}\n"
+        message += f"   - Descripción: {description}\n"
+        message += f"   - [Detalles y fotos aquí](https://icha.info/pebxTxQQZ)\n"  # Cambia esto por la URL real si está disponible
+        message += f"   ![Imagen]({image_url})\n\n"
+
+    message += "Si estás interesado en alguna de estas propiedades o tienes otra consulta, no dudes en decírmelo. ¡Estoy aquí para ayudar! 😊"
+    return message
+
 def search_properties(params):
     """
     Realiza la búsqueda de propiedades con los parámetros proporcionados.
@@ -89,31 +117,3 @@ def search_properties(params):
 
     logging.info(f"Resultados de búsqueda procesados: {search_results}")
     return search_results
-
-def format_properties_message(properties):
-    """
-    Formatea los resultados de las propiedades en un mensaje legible.
-    """
-    if not properties or not properties.get("objects"):
-        return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
-
-    message = "He encontrado algunas opciones que se ajustan a tus necesidades:\n\n"
-    for i, property in enumerate(properties.get("objects", []), start=1):
-        title = property.get('title', 'Sin título')
-        address = property.get('address', 'Dirección no disponible')
-        price_info = property.get('operations', [{}])[0].get('prices', [{}])[0]
-        price = price_info.get('price', 'Precio no disponible')
-        currency = price_info.get('currency', 'ARS')
-        image_url = property.get('photos', [{}])[0].get('image', 'https://via.placeholder.com/150')  # Usar la primera imagen
-        description = property.get('description', 'Descripción no disponible').strip().replace('\n', ' ')  # Limpiar la descripción
-
-        # Formatear el mensaje de manera más clara
-        message += f"{i}. **{title}**\n"
-        message += f"   - Ubicación: {address}\n"
-        message += f"   - Precio: {price} {currency}\n"
-        message += f"   - Descripción: {description}\n"
-        message += f"   - [Detalles y fotos aquí](https://icha.info/pebxTxQQZ)\n"  # Cambia esto por la URL real si está disponible
-        message += f"   ![Imagen]({image_url})\n\n"
-
-    message += "Si estás interesado en alguna de estas propiedades o tienes otra consulta, no dudes en decírmelo. ¡Estoy aquí para ayudar! 😊"
-    return message
