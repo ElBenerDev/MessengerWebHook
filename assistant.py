@@ -95,6 +95,7 @@ def generate_response():
             try:
                 # Extraer los parámetros del mensaje del usuario
                 params = json.loads(user_message.split("parametros:")[1].strip())
+                logger.info(f"Parámetros de búsqueda: {params}")  # Registro de parámetros
 
                 # Llamar a la función de búsqueda
                 results = search_properties(params)

@@ -49,9 +49,12 @@ def fetch_search_results(search_params):
         logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
             results = response.json()
+            if "objects" not in results:
+                logging.error("No se encontraron objetos en la respuesta.")
+                return None
             # Validar y limpiar los resultados
             cleaned_results = []
-            for property in results.get("objects", []):
+            for property in results["objects"]:
                 try:
                     cleaned_results.append({
                         "title": property.get("title", "Sin título"),
@@ -115,7 +118,7 @@ def format_properties_message(properties):
     for i, property in enumerate(properties, start=1):
         message += f"{i}. **{property['title']}**\n"
         message += f"   - Dirección: {property['address']}\n"
-        message += f"   - Precio: {property['price']}\n"
+        message += f"   - Precio: {property['price']} ARS\n"
         message += f"   - Superficie: {property['surface']}\n"
         message += f"   - Detalles: {property['details']}\n"
         message += f"   - [Ver propiedad]({property['url']})\n"
