@@ -1,18 +1,18 @@
+# busqueda.py
 import requests
 import logging
 import json
-import re
 
 # Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s 1- %(levelname)s - %(message)s"
 )
 
 # Clave de la API de propiedades
 API_KEY = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
-# URL de la API de tipo de cambio
+# URL de la API de tipo de cambio (puedes usar otra fuente si prefieres)
 EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/USD"
 
 def get_exchange_rate():
@@ -39,7 +39,7 @@ def fetch_search_results(search_params):
     try:
         # Convertir los parámetros a JSON
         data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
-        logging.info(f"JSON generado para la búsqueda: {data_param}")  # Depuración
+        print(f"JSON generado para la búsqueda: {data_param}")  # Depuración
         params = {
             "key": API_KEY,
             "data": data_param,
@@ -58,93 +58,90 @@ def fetch_search_results(search_params):
         logging.exception("Error al conectarse a la API de búsqueda.")
         return None
 
-def format_properties_message(properties):
+def ask_user_for_parameters():
     """
-    Formatea los resultados de las propiedades en un mensaje legible.
+    Función para interactuar con el usuario y preguntar los parámetros de búsqueda.
     """
-    if not properties or not properties.get("objects"):
-        return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
+    # Tipos de operación
+    print("\nTipos de operación disponibles:")
+    print("  1: Sale")
+    print("  2: Rent")
+    selected_operations = input("Seleccione los IDs de tipos de operación (separados por comas, o deje vacío para usar todos): ")
+    if selected_operations:
+        operation_ids = [int(op.strip()) for op in selected_operations.split(",") if op.strip().isdigit()]
+    else:
+        operation_ids = [1, 2]  # Usar todos por defecto
 
-    message = "He encontrado algunas opciones que se ajustan a tus necesidades:\n\n"
-    for i, property in enumerate(properties.get("objects", []), start=1):
-        title = property.get('title', 'Sin título')
-        address = property.get('address', 'Dirección no disponible')
-        price_info = property.get('operations', [{}])[0].get('prices', [{}])[0]
-        price = price_info.get('price', 'Precio no disponible')
-        currency = price_info.get('currency', 'ARS')
-        image_url = property.get('photos', [{}])[0].get('image', 'https://via.placeholder.com/150')  # Usar la primera imagen
-        description = property.get('description', 'Descripción no disponible').strip().replace('\n', ' ')  # Limpiar la descripción
+    # Tipos de propiedad
+    print("\nTipos de propiedad disponibles:")
+    print("  7: Bussiness Premises")
+    print("  13: Condo")
+    print("  2: Apartment")
+    print("  3: House")
+    print("  10: Garage")
+    print("  1: Land")
+    print("  12: Industrial Ship")
+    selected_properties = input("Seleccione los IDs de tipos de propiedad (separados por comas, o deje vacío para usar todos): ")
+    if selected_properties:
+        property_ids = [int(prop.strip()) for prop in selected_properties.split(",") if prop.strip().isdigit()]
+    else:
+        property_ids = [7, 13, 2, 3, 10, 1, 12]  # Usar todos por defecto
 
-        # Formatear el mensaje de manera más clara
-        message += f"{i}. **{title}**\n"
-        message += f"   - Ubicación: {address}\n"
-        message += f"   - Precio: {price} {currency}\n"
-        message += f"   - Descripción: {description}\n"
-        message += f"   - [Detalles y fotos aquí](https://icha.info/pebxTxQQZ)\n"  # Cambia esto por la URL real si está disponible
-        message += f"   ![Imagen]({image_url})\n\n"
-
-    message += "Si estás interesado en alguna de estas propiedades o tienes otra consulta, no dudes en decírmelo. ¡Estoy aquí para ayudar! 😊"
-    return message
-
-def ask_user_for_parameters(user_message):
-    """
-    Función para extraer parámetros de búsqueda del mensaje del usuario.
-    Aquí se puede implementar la lógica para analizar el mensaje y
-    construir los parámetros de búsqueda.
-    """
-    try:
-        # Usar una expresión regular para extraer el número de habitaciones y el presupuesto
-        match = re.match(r"(\d+)\s*,\s*(\d+)\s*USD", user_message)
-        if not match:
-            raise ValueError("Formato de mensaje incorrecto. Debe ser 'número de habitaciones, presupuesto en USD'.")
-
-        num_rooms = int(match.group(1))
-        budget = float(match.group(2))
-
-        # Obtener el tipo de cambio
-        exchange_rate = get_exchange_rate()
-        if not exchange_rate:
-            print("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
-            return None
-
-        # Convertir el presupuesto a ARS
-        budget_ars = int(budget * exchange_rate)
-
-        # Construir los parámetros de búsqueda
-        search_params = {
-            "operation_types": [2],  # Alquiler
-            "property_types": [2],    # Apartamento
-            "price_from": 0,          # Precio mínimo
-            "price_to": budget_ars,   # Precio máximo en ARS
-            "currency": "ARS"         # La búsqueda se realiza en ARS
-        }
-
-        return search_params
-
-    except Exception as e:
-        logging.error(f"Error al procesar los parámetros de búsqueda: {str(e)}")
+    # Obtener el tipo de cambio
+    exchange_rate = get_exchange_rate()
+    if not exchange_rate:
+        print("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
         return None
 
-def main(user_message):
+    # Rango de precios
+    print("\nIngrese los precios en USD. Se convertirán automáticamente a ARS para la búsqueda.")
+    price_from = input("Ingrese el precio mínimo en USD (o deje vacío para omitir): ")
+    price_to = input("Ingrese el precio máximo en USD (o deje vacío para omitir): ")
+
+    # Procesar los valores de precio para eliminar comas, convertirlos a enteros y luego a ARS
+    def process_price(price):
+        try:
+            return int(float(price.replace(",", "").strip()) * exchange_rate) if price else None
+        except ValueError:
+            print(f"El valor '{price}' no es un número válido. Ignorando este valor.")
+            return None
+
+    price_from = process_price(price_from)
+    price_to = process_price(price_to)
+
+    # Construir los parámetros de búsqueda
+    search_params = {
+        "operation_types": operation_ids,
+        "property_types": property_ids,
+        "price_from": price_from,
+        "price_to": price_to,
+        "currency": "ARS"  # La búsqueda se realiza en ARS
+    }
+
+    # Eliminar claves con valores None o listas vacías
+    search_params = {k: v for k, v in search_params.items() if v is not None}
+
+    return search_params
+
+def main():
     logging.info("Iniciando el programa.")
 
-    # Paso 1: Procesar el mensaje del usuario para obtener los parámetros de búsqueda
-    search_params = ask_user_for_parameters(user_message)
+    # Paso 1: Preguntar al usuario los parámetros de búsqueda
+    search_params = ask_user_for_parameters()
     if not search_params:
-        return "No se pudieron obtener los parámetros de búsqueda."
+        return
 
     # Paso 2: Realizar la búsqueda con los parámetros seleccionados
-    logging.info("Realizando la búsqueda con los parámetros seleccionados...")
+    print("\nRealizando la búsqueda con los parámetros seleccionados...")
     search_results = fetch_search_results(search_params)
 
     if not search_results:
-        return "No se pudieron obtener resultados desde la API de búsqueda."
+        print("No se pudieron obtener resultados desde la API de búsqueda.")
+        return
 
-    # Paso 3: Formatear y devolver los resultados de la búsqueda
-    return format_properties_message(search_results)
+    # Paso 3: Mostrar los resultados de la búsqueda
+    print("\nResultados de la búsqueda:")
+    print(json.dumps(search_results, indent=4))
 
 if __name__ == "__main__":
-    # Ejemplo de uso
-    user_message = "2, 1000000 USD"  # Simulación de entrada del usuario
-    result_message = main(user_message)
-    print(result_message)
+    main()
