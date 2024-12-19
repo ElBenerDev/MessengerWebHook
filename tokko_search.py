@@ -48,26 +48,7 @@ def fetch_search_results(search_params):
         response = requests.get(endpoint, params=params)
         logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
-            results = response.json()
-            if "objects" not in results:
-                logging.error("No se encontraron objetos en la respuesta.")
-                return None
-            # Validar y limpiar los resultados
-            cleaned_results = []
-            for property in results["objects"]:
-                try:
-                    cleaned_results.append({
-                        "title": property.get("title", "Sin título"),
-                        "address": property.get("address", "Dirección no disponible"),
-                        "price": property.get("price", "Precio no disponible"),
-                        "surface": property.get("surface", "Superficie no especificada"),
-                        "details": property.get("description", "Sin detalles"),
-                        "image": property.get("image", "https://via.placeholder.com/150"),  # Imagen por defecto
-                        "url": property.get("url", "#")  # Enlace por defecto
-                    })
-                except Exception as e:
-                    logging.error(f"Error al procesar una propiedad: {str(e)}")
-            return cleaned_results
+            return response.json()  # Devolver directamente los resultados
         else:
             logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
             logging.error(f"Respuesta del servidor: {response.text}")
@@ -86,6 +67,11 @@ def search_properties(params):
         logging.error("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
         return {"error": "No se pudo obtener el tipo de cambio. Intente nuevamente más tarde."}
 
+    # Realizar la búsqueda
+    search_results = fetch_search_results(params)
+    if not search_results:
+        return {"error": "No se pudieron obtener resultados desde la API de búsqueda."}
+
     # Convertir precios de USD a ARS si están presentes
     def process_price(price):
         try:
@@ -94,16 +80,10 @@ def search_properties(params):
             logging.error(f"El valor '{price}' no es un número válido.")
             return None
 
-    # Procesar los precios en los parámetros
-    if "price_from" in params:
-        params["price_from"] = process_price(params["price_from"])
-    if "price_to" in params:
-        params["price_to"] = process_price(params["price_to"])
-
-    # Realizar la búsqueda
-    search_results = fetch_search_results(params)
-    if not search_results:
-        return {"error": "No se pudieron obtener resultados desde la API de búsqueda."}
+    # Procesar los precios en los resultados
+    for property in search_results.get("objects", []):
+        if "price" in property:
+            property["price"] = process_price(property["price"])
 
     return search_results
 
@@ -115,12 +95,12 @@ def format_properties_message(properties):
         return "No se encontraron propiedades que coincidan con los criterios de búsqueda."
 
     message = "He encontrado algunas opciones que se ajustan a tus necesidades:\n\n"
-    for i, property in enumerate(properties, start=1):
-        message += f"{i}. **{property['title']}**\n"
-        message += f"   - Dirección: {property['address']}\n"
-        message += f"   - Precio: {property['price']} ARS\n"
-        message += f"   - Superficie: {property['surface']}\n"
-        message += f"   - Detalles: {property['details']}\n"
-        message += f"   - [Ver propiedad]({property['url']})\n"
-        message += f"   ![Imagen]({property['image']})\n\n"
+    for i, property in enumerate(properties.get("objects", []), start=1):
+        message += f"{i}. **{property.get('title', 'Sin título')}**\n"
+        message += f"   - Dirección: {property.get('address', 'Dirección no disponible')}\n"
+        message += f"   - Precio: {property.get('price', 'Precio no disponible')} ARS\n"
+        message += f"   - Superficie: {property.get('surface', 'Superficie no especificada')}\n"
+        message += f"   - Detalles: {property.get('description', 'Sin detalles')}\n"
+        message += f"   - [Ver propiedad]({property.get('url', '#')})\n"
+        message += f"   ![Imagen]({property.get('image', 'https://via.placeholder.com/150')})\n\n"
     return message
