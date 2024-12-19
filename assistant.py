@@ -51,6 +51,8 @@ def generate_response():
     user_message = data.get('message')
     user_id = data.get('sender_id')
 
+    logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
+
     if not user_message or not user_id:
         return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
 
@@ -89,6 +91,7 @@ def generate_response():
 
         # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
+        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
         # Verificar si el asistente solicita realizar la búsqueda
         if "parametros:" in user_message.lower():
@@ -99,6 +102,7 @@ def generate_response():
 
                 # Llamar a la función de búsqueda
                 results = search_properties(params)
+                logger.info(f"Resultados de búsqueda: {results}")
 
                 # Verificar si hubo un error
                 if "error" in results:
@@ -106,11 +110,13 @@ def generate_response():
 
                 # Formatear los resultados en un mensaje
                 response_message = format_properties_message(results)
+                logger.info(f"Mensaje de respuesta formateado: {response_message}")
                 return jsonify({'response': response_message})
 
             except json.JSONDecodeError:
                 return jsonify({'response': "El formato de los parámetros no es válido. Por favor, envíalos en formato JSON."})
             except Exception as e:
+                logger.error(f"Error al procesar los parámetros: {str(e)}")
                 return jsonify({'response': f"Error al procesar los parámetros: {str(e)}"})
 
         # Devolver la respuesta generada por el asistente

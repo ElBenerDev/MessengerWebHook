@@ -48,7 +48,9 @@ def fetch_search_results(search_params):
         response = requests.get(endpoint, params=params)
         logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
-            return response.json()  # Devolver directamente los resultados
+            results = response.json()
+            logging.info(f"Resultados de búsqueda recibidos: {results}")
+            return results  # Devolver directamente los resultados
         else:
             logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
             logging.error(f"Respuesta del servidor: {response.text}")
@@ -85,6 +87,7 @@ def search_properties(params):
         if "price" in property:
             property["price"] = process_price(property["price"])
 
+    logging.info(f"Resultados de búsqueda procesados: {search_results}")
     return search_results
 
 def format_properties_message(properties):
