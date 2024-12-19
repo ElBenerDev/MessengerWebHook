@@ -48,7 +48,6 @@ def fetch_search_results(search_params):
         response = requests.get(endpoint, params=params)
         logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
-            logging.info(f"Respuesta de la API: {response.text}")  # Log de la respuesta
             return response.json()
         else:
             logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
@@ -81,7 +80,7 @@ def ask_user_for_parameters():
     print("  10: Garage")
     print("  1: Land")
     print("  12: Industrial Ship")
-    selected_properties = input("Seleccione los IDs de tipos de propiedad (separados por comas, o deje vacío para usar solo departamentos): ")
+    selected_properties = input("Seleccione los IDs de tipos de propiedad (separados por comas, o deje vacío para usar todos): ")
     if selected_properties:
         property_ids = [int(prop.strip()) for prop in selected_properties.split(",") if prop.strip().isdigit()]
     else:
