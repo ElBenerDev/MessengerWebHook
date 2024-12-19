@@ -38,7 +38,7 @@ def fetch_search_results(search_params):
     try:
         # Convertir los parámetros a JSON
         data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
-        print(f"JSON generado para la búsqueda: {data_param}")  # Depuración
+        logging.info(f"JSON generado para la búsqueda: {data_param}")  # Log de depuración
         params = {
             "key": API_KEY,
             "data": data_param,
@@ -48,6 +48,7 @@ def fetch_search_results(search_params):
         response = requests.get(endpoint, params=params)
         logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
+            logging.info(f"Respuesta de la API: {response.text}")  # Log de la respuesta
             return response.json()
         else:
             logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
@@ -80,7 +81,7 @@ def ask_user_for_parameters():
     print("  10: Garage")
     print("  1: Land")
     print("  12: Industrial Ship")
-    selected_properties = input("Seleccione los IDs de tipos de propiedad (separados por comas, o deje vacío para usar todos): ")
+    selected_properties = input("Seleccione los IDs de tipos de propiedad (separados por comas, o deje vacío para usar solo departamentos): ")
     if selected_properties:
         property_ids = [int(prop.strip()) for prop in selected_properties.split(",") if prop.strip().isdigit()]
     else:
@@ -120,6 +121,7 @@ def ask_user_for_parameters():
     # Eliminar claves con valores None o listas vacías
     search_params = {k: v for k, v in search_params.items() if v is not None}
 
+    logging.info(f"Parámetros de búsqueda: {search_params}")  # Log de los parámetros de búsqueda
     return search_params
 
 def main():
@@ -145,8 +147,9 @@ def main():
         for operation in obj.get('operations', []):
             if operation['operation_id'] == 2:  # Asegurarse de que sea alquiler
                 price = operation['prices'][0]['price']
+                # Mostrar el precio mensual en ARS
                 print(f"Ubicación: {obj['address']}")
-                print(f"Precio: {price} ARS")
+                print(f"Precio: {price} ARS al mes")
                 print(f"Descripción: {obj['description']}")
                 print(f"Link: https://ficha.info/p/{obj['id']}")
                 print("-----")
