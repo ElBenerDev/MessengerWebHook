@@ -38,19 +38,16 @@ def fetch_search_results(search_params):
     try:
         # Convertir los parámetros a JSON
         data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
+        print(f"JSON generado para la búsqueda: {data_param}")  # Depuración
         params = {
             "key": API_KEY,
             "data": data_param,
             "format": "json",
             "limit": 20
         }
-        # Construir la URL completa para la solicitud
-        request_url = f"{endpoint}?key={API_KEY}&data={data_param}&format=json&limit=20"
-        logging.info(f"Solicitud enviada a la API de búsqueda: {request_url}")  # Log de la URL
-
         response = requests.get(endpoint, params=params)
+        logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
-            logging.info(f"Respuesta de la API: {response.text}")  # Log de la respuesta
             return response.json()
         else:
             logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
@@ -95,11 +92,9 @@ def ask_user_for_parameters():
         print("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
         return None
 
-    # Establecer el precio mínimo en 0 USD
-    price_from = 0  # Precio mínimo fijo en 0 USD
-
     # Rango de precios
-    print("\nIngrese el precio máximo en USD. Se convertirá automáticamente a ARS para la búsqueda.")
+    print("\nIngrese los precios en USD. Se convertirán automáticamente a ARS para la búsqueda.")
+    price_from = input("Ingrese el precio mínimo en USD (o deje vacío para omitir): ")
     price_to = input("Ingrese el precio máximo en USD (o deje vacío para omitir): ")
 
     # Procesar los valores de precio para eliminar comas, convertirlos a enteros y luego a ARS
@@ -110,8 +105,8 @@ def ask_user_for_parameters():
             print(f"El valor '{price}' no es un número válido. Ignorando este valor.")
             return None
 
-    price_from = process_price(str(price_from))  # Convertir el precio mínimo a ARS
-    price_to = process_price(price_to)  # Convertir el precio máximo a ARS
+    price_from = process_price(price_from)
+    price_to = process_price(price_to)
 
     # Construir los parámetros de búsqueda
     search_params = {
@@ -148,7 +143,7 @@ def main():
     for obj in search_results['objects']:
         # Filtrar solo los resultados de alquiler
         for operation in obj.get('operations', []):
-            if operation['operation_type'] == 'Rent':
+            if operation['operation_id'] == 2:  # Asegurarse de que sea alquiler
                 price = operation['prices'][0]['price']
                 print(f"Ubicación: {obj['address']}")
                 print(f"Precio: {price} ARS")
