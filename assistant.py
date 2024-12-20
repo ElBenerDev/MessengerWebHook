@@ -4,6 +4,8 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import os
 import logging
+import requests
+import json
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -77,11 +79,63 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
+        # Aquí puedes agregar lógica para filtrar y buscar propiedades
+        # Suponiendo que ya tienes los parámetros de búsqueda
+        search_params = {
+            "operation_types": [2],  # Alquiler
+            "property_types": [2],    # Departamentos
+            "price_from": 100000,     # Ejemplo de precio mínimo
+            "price_to": 200000,       # Ejemplo de precio máximo
+            "currency": "ARS"
+        }
+
+        logger.info(f"Parámetros de búsqueda: {search_params}")
+
+        # Realizar la búsqueda
+        search_results = fetch_search_results(search_params)
+        logger.info(f"Resultados de búsqueda: {search_results}")
+
+        if search_results and 'objects' in search_results:
+            # Procesar y enviar los resultados al usuario
+            response_message = "He encontrado algunas opciones de departamentos:\n"
+            for obj in search_results['objects']:
+                response_message += f"**Ubicación**: {obj['address']}\n"
+                response_message += f"**Precio**: {obj['price']} ARS al mes\n"
+                response_message += f"**Descripción**: {obj['description']}\n"
+                response_message += f"[Ver detalles]({obj['link']})\n\n"
+
+            logger.info(f"Mensaje de respuesta al usuario: {response_message}")
+            return jsonify({'response': response_message})
+        else:
+            logger.warning("No se encontraron resultados para la búsqueda.")
+            return jsonify({'response': "No se encontraron resultados para tu búsqueda."})
+
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
-    return jsonify({'response': assistant_message})
+def fetch_search_results(search_params):
+    endpoint = "https://www.tokkobroker.com/api/v1/property/search/"
+    try:
+        data_param = json.dumps(search_params, separators=(',', ':'))
+        logger.info(f"JSON generado para la búsqueda: {data_param}")
+        params = {
+            "key": os.getenv("TOKKO_API_KEY"),  # Asegúrate de tener esta variable de entorno
+            "data": data_param,
+            "format": "json",
+            "limit": 20
+        }
+        response = requests.get(endpoint, params=params)
+        logger.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
+            logger.error(f"Respuesta del servidor: {response.text}")
+            return None
+    except Exception as e:
+        logger.exception("Error al conectarse a la API de búsqueda.")
+        return None
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
