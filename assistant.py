@@ -63,8 +63,10 @@ def generate_response():
 
     # Manejo del flujo de conversación
     if user_data[user_id]["step"] == 0:
-        user_data[user_id]["step"] += 1
-        return ask_location(user_id)
+        if "hola" in user_message.lower() or "buenas" in user_message.lower():
+            return jsonify({'response': "¡Hola! Soy tu asistente. ¿En qué ubicación estás buscando la propiedad?"})
+        else:
+            return jsonify({'response': "¡Hola! Soy tu asistente. ¿En qué ubicación estás buscando la propiedad?"})
 
     elif user_data[user_id]["step"] == 1:
         user_data[user_id]["location"] = user_message
@@ -84,10 +86,14 @@ def generate_response():
             user_data[user_id]["step"] += 1
             return search_properties(user_id)
 
-    return jsonify({'response': "No entendí tu respuesta. Por favor, proporciona la información de nuevo."})
+    # Manejo de preguntas generales
+    if "cómo te llamas" in user_message.lower():
+        return jsonify({'response': "Soy un asistente virtual creado para ayudarte a encontrar propiedades."})
 
-def ask_location(user_id):
-    return jsonify({'response': "¿En qué ubicación estás buscando la propiedad?"})
+    if "qué puedes hacer" in user_message.lower():
+        return jsonify({'response': "Puedo ayudarte a buscar propiedades según tus preferencias."})
+
+    return jsonify({'response': "No entendí tu respuesta. Por favor, proporciona la información de nuevo."})
 
 def ask_property_type(user_id):
     return jsonify({'response': "¿Qué tipo de propiedad estás buscando? (por ejemplo, departamento, casa)"})
