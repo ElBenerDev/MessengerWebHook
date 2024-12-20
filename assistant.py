@@ -4,8 +4,6 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import os
 import logging
-import requests
-import json
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -21,8 +19,6 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
 # Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
-# Diccionario para almacenar el estado de la conversación de cada usuario
-user_data = {}
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
@@ -51,109 +47,41 @@ def generate_response():
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
-    # Inicializar el estado del usuario si no existe
-    if user_id not in user_data:
-        user_data[user_id] = {
-            "location": None,
-            "property_type": None,
-            "price_from": None,
-            "price_to": None,
-            "step": 0
-        }
-
-    # Manejo del flujo de conversación
-    if user_data[user_id]["step"] == 0:
-        if "hola" in user_message.lower() or "buenas" in user_message.lower():
-            return jsonify({'response': "¡Hola! Soy tu asistente. ¿En qué ubicación estás buscando la propiedad?"})
-        else:
-            return jsonify({'response': "¡Hola! Soy tu asistente. ¿En qué ubicación estás buscando la propiedad?"})
-
-    elif user_data[user_id]["step"] == 1:
-        user_data[user_id]["location"] = user_message
-        user_data[user_id]["step"] += 1
-        return ask_property_type(user_id)
-
-    elif user_data[user_id]["step"] == 2:
-        user_data[user_id]["property_type"] = user_message
-        user_data[user_id]["step"] += 1
-        return ask_price_range(user_id)
-
-    elif user_data[user_id]["step"] == 3:
-        price_range = user_message.split('-')
-        if len(price_range) == 2:
-            user_data[user_id]["price_from"] = int(price_range[0].strip())
-            user_data[user_id]["price_to"] = int(price_range[1].strip())
-            user_data[user_id]["step"] += 1
-            return search_properties(user_id)
-
-    # Manejo de preguntas generales
-    if "cómo te llamas" in user_message.lower():
-        return jsonify({'response': "Soy un asistente virtual creado para ayudarte a encontrar propiedades."})
-
-    if "qué puedes hacer" in user_message.lower():
-        return jsonify({'response': "Puedo ayudarte a buscar propiedades según tus preferencias."})
-
-    return jsonify({'response': "No entendí tu respuesta. Por favor, proporciona la información de nuevo."})
-
-def ask_property_type(user_id):
-    return jsonify({'response': "¿Qué tipo de propiedad estás buscando? (por ejemplo, departamento, casa)"})
-
-def ask_price_range(user_id):
-    return jsonify({'response': "¿Cuál es tu rango de precios? (por ejemplo, 100000 - 200000)"})
-
-def search_properties(user_id):
-    search_params = {
-        "operation_types": [2],  # Alquiler
-        "property_types": [2],    # Departamentos
-        "price_from": user_data[user_id]["price_from"],
-        "price_to": user_data[user_id]["price_to"],
-        "currency": "ARS"
-    }
-
-    logger.info(f"Parámetros de búsqueda: {search_params}")
-
-    # Realizar la búsqueda
-    search_results = fetch_search_results(search_params)
-    logger.info(f"Resultados de búsqueda: {search_results}")
-
-    if search_results and 'objects' in search_results:
-        response_message = "He encontrado algunas opciones de departamentos:\n"
-        for obj in search_results['objects']:
-            response_message += f"**Ubicación**: {obj['address']}\n"
-            response_message += f"**Precio**: {obj['price']} ARS al mes\n"
-            response_message += f"**Descripción**: {obj['description']}\n"
-            response_message += f"[Ver detalles]({obj['link']})\n\n"
-
-        logger.info(f"Mensaje de respuesta al usuario: {response_message}")
-        return jsonify({'response': response_message})
-    else:
-        logger.warning("No se encontraron resultados para la búsqueda.")
-        return jsonify({'response': "No se encontraron resultados para tu búsqueda."})
-
-def fetch_search_results(search_params):
-    endpoint = "https://www.tokkobroker.com/api/v1/property/search/"
     try:
-        data_param = json.dumps(search_params, separators=(',', ':'))
-        logger.info(f"JSON generado para la búsqueda: {data_param}")
-        params = {
-            "key": os.getenv("TOKKO_API_KEY"),  # Asegúrate de tener esta variable de entorno
-            "data": data_param,
-            "format": "json",
-            "limit": 20
-        }
-        response = requests.get(endpoint, params=params)
-        logger.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
-        if response.status_code == 200:
-            return response.json()
+        # Verificar si ya existe un thread_id para este usuario
+        if user_id not in user_threads:
+            # Crear un nuevo hilo de conversación si no existe
+            thread = client.beta.threads.create()
+            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
+            user_threads[user_id] = thread.id
         else:
-            logger.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
-            logger.error(f"Respuesta del servidor: {response.text}")
-            if response.status_code == 401:
-                logger.error("Error de autenticación: Verifica tu clave de API.")
-            return None
+            thread_id = user_threads[user_id]
+
+        # Enviar el mensaje del usuario al hilo existente
+        client.beta.threads.messages.create(
+            thread_id=user_threads[user_id],
+            role="user",
+            content=user_message
+        )
+
+        # Crear y manejar la respuesta del asistente
+        event_handler = EventHandler()
+        with client.beta.threads.runs.stream(
+            thread_id=user_threads[user_id],
+            assistant_id=assistant_id,
+            event_handler=event_handler,
+        ) as stream:
+            stream.until_done()
+
+        # Obtener el mensaje generado por el asistente
+        assistant_message = event_handler.assistant_message
+        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+
     except Exception as e:
-        logger.exception("Error al conectarse a la API de búsqueda.")
-        return None
+        logger.error(f"Error al generar respuesta: {str(e)}")
+        return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+
+    return jsonify({'response': assistant_message})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
