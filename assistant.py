@@ -62,38 +62,15 @@ def fetch_search_results(search_params):
         logger.exception("Error al conectarse a la API de búsqueda.")
         return None
 
-def parse_search_parameters(user_message):
-    # Aquí puedes implementar la lógica para extraer los parámetros de búsqueda del mensaje del usuario
-    # Por simplicidad, asumimos que el mensaje contiene los parámetros en un formato específico
-    # Ejemplo: "Buscar propiedades en Buenos Aires, precio mínimo 100000, precio máximo 200000"
-
-    # Este es un ejemplo simple de cómo podrías extraer información
-    # En un caso real, deberías usar un parser más robusto o NLP
-    operation_ids = [2]  # Solo alquiler por defecto
-    property_ids = [2]   # Solo departamentos por defecto
-    price_from = None
-    price_to = None
-
-    # Extraer precios del mensaje
-    if "precio mínimo" in user_message:
-        price_from = int(user_message.split("precio mínimo")[-1].split(",")[0].strip())
-    if "precio máximo" in user_message:
-        price_to = int(user_message.split("precio máximo")[-1].split(",")[0].strip())
-
-    exchange_rate = get_exchange_rate()
-    if exchange_rate:
-        price_from = int(price_from * exchange_rate) if price_from else None
-        price_to = int(price_to * exchange_rate) if price_to else None
-
-    search_params = {
-        "operation_types": operation_ids,
-        "property_types": property_ids,
-        "price_from": price_from,
-        "price_to": price_to,
+def ask_user_for_parameters(user_id):
+    # Preguntar al usuario sobre los parámetros de búsqueda
+    return {
+        "operation_types": [2],  # Solo alquiler por defecto
+        "property_types": [2],    # Solo departamentos por defecto
+        "price_from": None,
+        "price_to": None,
         "currency": "ARS"
     }
-
-    return {k: v for k, v in search_params.items() if v is not None}
 
 class EventHandler(AssistantEventHandler):
     def __init__(self):
@@ -127,29 +104,19 @@ def generate_response():
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
-        else:
-            thread_id = user_threads[user_id]
 
-        # Parsear los parámetros de búsqueda del mensaje del usuario
-        search_params = parse_search_parameters(user_message)
-        if search_params:
-            search_results = fetch_search_results(search_params)
-            if search_results and 'objects' in search_results:
-                assistant_message = "Resultados de la búsqueda:\n"
-                for obj in search_results['objects']:
-                    for operation in obj.get('operations', []):
-                        if operation['operation_id'] == 2:  # Asegurarse de que sea alquiler
-                            price = operation['prices'][0]['price']
-                            assistant_message += f"Ubicación: {obj['address']}\n"
-                            assistant_message += f"Precio: {price} ARS al mes\n"
-                            assistant_message += f"Descripción: {obj['description']}\n"
-                            assistant_message += f"Link: https://ficha.info/p/{obj['id']}\n"
-                            assistant_message += "-----\n"
-                logger.info(f"Mensaje generado por el asistente: {assistant_message}")
-            else:
-                assistant_message = "No se encontraron resultados para su búsqueda."
+        # Aquí se puede implementar la lógica de descubrimiento
+        if "hola" in user_message.lower():
+            assistant_message = "¡Hola! ¿Qué tipo de propiedad estás buscando? (por ejemplo, alquiler de departamentos)"
+        elif "alquiler" in user_message.lower() or "venta" in user_message.lower():
+            # Aquí podrías preguntar más detalles
+            assistant_message = "Entendido. ¿Cuál es tu rango de precios? (por ejemplo, entre 100000 y 200000)"
         else:
-            assistant_message = "No se pudieron procesar los parámetros de búsqueda."
+            # Si no se entiende el mensaje, se puede pedir más información
+            assistant_message = "No entendí tu solicitud. ¿Puedes darme más detalles sobre lo que buscas?"
+
+        # Enviar el mensaje del asistente
+        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
