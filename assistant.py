@@ -4,6 +4,7 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import os
 import logging
+import json
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -17,8 +18,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # ID del asistente
 assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
-# Diccionario para almacenar el thread_id de cada usuario
+# Diccionario para almacenar el thread_id de cada usuario y sus parámetros
 user_threads = {}
+user_parameters = {}
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
@@ -35,6 +37,45 @@ class EventHandler(AssistantEventHandler):
     def on_text_delta(self, delta, snapshot):
         print(delta.value, end="", flush=True)
         self.assistant_message += delta.value
+
+def update_user_parameters(user_id, message):
+    """
+    Actualiza los parámetros del usuario en función del mensaje proporcionado.
+    """
+    if user_id not in user_parameters:
+        # Inicializar parámetros predeterminados
+        user_parameters[user_id] = {
+            "operation_types": [2],  # Predeterminado: Rent
+            "property_types": [2],   # Predeterminado: Apartment
+            "price_from": 0,        # Precio mínimo en USD
+            "price_to": 10000       # Precio máximo en USD
+        }
+
+    parameters = user_parameters[user_id]
+
+    # Procesar el mensaje del usuario para actualizar parámetros
+    if "venta" in message.lower():
+        parameters["operation_types"] = [1]  # Sale
+    if "alquiler" in message.lower():
+        parameters["operation_types"] = [2]  # Rent
+    if "apartamento" in message.lower():
+        parameters["property_types"] = [2]  # Apartment
+    if "casa" in message.lower():
+        parameters["property_types"] = [3]  # House
+    if "precio mínimo" in message.lower():
+        try:
+            price_from = int(message.split("precio mínimo")[-1].strip().split()[0])
+            parameters["price_from"] = price_from
+        except ValueError:
+            logger.warning("No se pudo procesar el precio mínimo del mensaje.")
+    if "precio máximo" in message.lower():
+        try:
+            price_to = int(message.split("precio máximo")[-1].strip().split()[0])
+            parameters["price_to"] = price_to
+        except ValueError:
+            logger.warning("No se pudo procesar el precio máximo del mensaje.")
+
+    return parameters
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -57,6 +98,9 @@ def generate_response():
         else:
             thread_id = user_threads[user_id]
 
+        # Actualizar parámetros del usuario según el mensaje
+        updated_parameters = update_user_parameters(user_id, user_message)
+
         # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
@@ -75,6 +119,9 @@ def generate_response():
 
         # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
+
+        # Agregar los parámetros actualizados a la respuesta
+        assistant_message += f"\n\nParámetros actuales: {json.dumps(updated_parameters, indent=2)}"
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
     except Exception as e:
