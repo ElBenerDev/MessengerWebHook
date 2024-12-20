@@ -108,9 +108,13 @@ def generate_response():
         # Aquí se puede implementar la lógica de descubrimiento
         if "hola" in user_message.lower():
             assistant_message = "¡Hola! ¿Qué tipo de propiedad estás buscando? (por ejemplo, alquiler de departamentos)"
-        elif "alquiler" in user_message.lower() or "venta" in user_message.lower():
+        elif "departamento" in user_message.lower():
+            assistant_message = "Entendido, ¿cuál es tu rango de precios? (por ejemplo, entre 100000 y 200000)"
+        elif "precio" in user_message.lower():
             # Aquí podrías preguntar más detalles
-            assistant_message = "Entendido. ¿Cuál es tu rango de precios? (por ejemplo, entre 100000 y 200000)"
+            assistant_message = "Perfecto, ¿tienes un precio mínimo y máximo en mente?"
+        elif "como te llamas" in user_message.lower():
+            assistant_message = "Soy un asistente virtual aquí para ayudarte a encontrar propiedades."
         else:
             # Si no se entiende el mensaje, se puede pedir más información
             assistant_message = "No entendí tu solicitud. ¿Puedes darme más detalles sobre lo que buscas?"
