@@ -53,6 +53,10 @@ def update_user_parameters(user_id, message):
 
     parameters = user_parameters[user_id]
 
+    # Logs para entender qué parámetros se están actualizando
+    logger.info(f"Parámetros antes de procesar el mensaje: {parameters}")
+    logger.info(f"Mensaje recibido para actualizar parámetros: {message}")
+
     # Procesar el mensaje del usuario para actualizar parámetros
     if "venta" in message.lower():
         parameters["operation_types"] = [1]  # Sale
@@ -75,6 +79,7 @@ def update_user_parameters(user_id, message):
         except ValueError:
             logger.warning("No se pudo procesar el precio máximo del mensaje.")
 
+    logger.info(f"Parámetros actualizados: {parameters}")
     return parameters
 
 @app.route('/generate-response', methods=['POST'])
