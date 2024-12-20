@@ -58,29 +58,36 @@ def update_user_parameters(user_id, message):
     logger.info(f"Mensaje recibido para actualizar parámetros: {message}")
 
     # Procesar el mensaje del usuario para actualizar parámetros
-    if "venta" in message.lower():
-        parameters["operation_types"] = [1]  # Sale
-    if "alquiler" in message.lower():
-        parameters["operation_types"] = [2]  # Rent
-    if "apartamento" in message.lower():
-        parameters["property_types"] = [2]  # Apartment
-    if "casa" in message.lower():
-        parameters["property_types"] = [3]  # House
-    if "precio mínimo" in message.lower():
-        try:
-            price_from = int(message.split("precio mínimo")[-1].strip().split()[0])
-            parameters["price_from"] = price_from
-        except ValueError:
-            logger.warning("No se pudo procesar el precio mínimo del mensaje.")
-    if "precio máximo" in message.lower():
-        try:
-            price_to = int(message.split("precio máximo")[-1].strip().split()[0])
-            parameters["price_to"] = price_to
-        except ValueError:
-            logger.warning("No se pudo procesar el precio máximo del mensaje.")
+    try:
+        if message.isdigit():
+            # Si el mensaje es un número, se asume como precio máximo
+            parameters["price_to"] = int(message)
+        elif "venta" in message.lower():
+            parameters["operation_types"] = [1]  # Sale
+        elif "alquiler" in message.lower():
+            parameters["operation_types"] = [2]  # Rent
+        elif "apartamento" in message.lower():
+            parameters["property_types"] = [2]  # Apartment
+        elif "casa" in message.lower():
+            parameters["property_types"] = [3]  # House
+        elif "precio mínimo" in message.lower():
+            try:
+                price_from = int(message.split("precio mínimo")[-1].strip().split()[0])
+                parameters["price_from"] = price_from
+            except ValueError:
+                logger.warning("No se pudo procesar el precio mínimo del mensaje.")
+        elif "precio máximo" in message.lower():
+            try:
+                price_to = int(message.split("precio máximo")[-1].strip().split()[0])
+                parameters["price_to"] = price_to
+            except ValueError:
+                logger.warning("No se pudo procesar el precio máximo del mensaje.")
+    except Exception as e:
+        logger.error(f"Error al procesar parámetros: {str(e)}")
 
     logger.info(f"Parámetros actualizados: {parameters}")
     return parameters
+
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
