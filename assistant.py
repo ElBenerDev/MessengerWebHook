@@ -132,6 +132,8 @@ def fetch_search_results(search_params):
         else:
             logger.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
             logger.error(f"Respuesta del servidor: {response.text}")
+            if response.status_code == 401:
+                logger.error("Error de autenticación: Verifica tu clave de API.")
             return None
     except Exception as e:
         logger.exception("Error al conectarse a la API de búsqueda.")
