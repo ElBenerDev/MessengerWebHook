@@ -50,10 +50,10 @@ def generate_response():
     # Lógica para interactuar con el usuario y recolectar datos
     if "tipo de cambio" in user_message.lower():
         return jsonify({'response': "¿En qué moneda te gustaría saber el tipo de cambio? (por ejemplo, USD a ARS)"})
-    
+
     if "buscar propiedades" in user_message.lower():
         return jsonify({'response': "¿En qué ciudad deseas buscar propiedades? ¿Cuál es tu rango de precio?"})
-    
+
     try:
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
