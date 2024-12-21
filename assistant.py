@@ -15,7 +15,7 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ID del asistente
-assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
+assistant_id = os.getenv("ASSISTANT_ID", "asst_QUrcIPAsQLse1tDBIzVdw5pt")
 
 # Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
