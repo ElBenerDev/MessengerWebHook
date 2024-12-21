@@ -89,6 +89,40 @@ def fetch_search_results(search_params):
         return None
 
 
+@app.route('/generate-response', methods=['POST'])
+def generate_response():
+    """
+    Endpoint que recibe un mensaje del usuario, lo procesa con el asistente de OpenAI
+    y devuelve la respuesta generada.
+    """
+    data = request.json
+    user_id = data.get('sender_id')
+    user_message = data.get('message')
+
+    if not user_id or not user_message:
+        return jsonify({'response': "Faltan el ID de usuario o el mensaje."}), 400
+
+    # Aquí puedes agregar lógica para manejar los threads de usuario, si es necesario
+    thread_id = user_threads.get(user_id)
+
+    try:
+        # Generar respuesta con el asistente de OpenAI
+        response = client.Completion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": user_message}],
+            assistant_id=assistant_id,
+            max_tokens=150
+        )
+
+        # Obtener la respuesta del asistente
+        assistant_message = response.choices[0].message['content']
+        return jsonify({'response': assistant_message})
+
+    except Exception as e:
+        logging.error(f"Error al procesar la solicitud con OpenAI: {str(e)}")
+        return jsonify({'response': "Error al procesar tu mensaje."}), 500
+
+
 @app.route('/property-search', methods=['POST'])
 def property_search():
     """
