@@ -122,4 +122,6 @@ def property_search():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    # Usa el puerto proporcionado por Render o el puerto 5000 por defecto
+    port = int(os.environ.get("PORT", 5000))  # Usa el puerto de Render o el 5000 por defecto
+    app.run(host='0.0.0.0', port=port)  # Cambiar para que Flask escuche en el puerto correcto
