@@ -106,16 +106,24 @@ def generate_response():
         # Actualizar parámetros del usuario
         updated_parameters = update_user_parameters(user_id, user_message)
 
-        # Verificar si faltan datos antes de proceder a la búsqueda
-        if "precio mínimo" not in user_message.lower() or "precio máximo" not in user_message.lower():
-            assistant_message = (
-                "Gracias por tu mensaje. Para continuar, por favor indícame el rango de precios que buscas "
-                "(por ejemplo: 'precio mínimo 50000, precio máximo 200000')."
+        # Verificar si ya se tiene toda la información necesaria
+        params_complete = (
+            updated_parameters["price_from"] > 0 and
+            updated_parameters["price_to"] > 0 and
+            "operation_types" in updated_parameters and
+            "property_types" in updated_parameters
+        )
+
+        if not params_complete:
+            # Dejar que el asistente de OpenAI maneje el diálogo
+            assistant_response = client.chat_complete(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "Eres un asistente que ayuda a buscar propiedades. Guía al usuario para obtener los datos necesarios."},
+                    {"role": "user", "content": user_message}
+                ]
             )
-        elif "venta" not in user_message.lower() and "alquiler" not in user_message.lower():
-            assistant_message = (
-                "¿Estás buscando propiedades en venta o en alquiler? Por favor, indícamelo para continuar."
-            )
+            assistant_message = assistant_response['choices'][0]['message']['content']
         else:
             # Obtener el tipo de cambio
             exchange_rate = get_exchange_rate()
