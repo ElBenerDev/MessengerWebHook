@@ -4,7 +4,7 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import os
 import logging
-from tokko_search import ask_user_for_parameters, fetch_search_results  # Importar funciones de búsqueda
+from tokko_search import fetch_search_results, get_exchange_rate  # Importar funciones desde search_service
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -48,36 +48,32 @@ def generate_response():
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
-    # Lógica para interactuar con el usuario y recolectar datos
-    if "tipo de cambio" in user_message.lower():
-        return jsonify({'response': "¿En qué moneda te gustaría saber el tipo de cambio? (por ejemplo, USD a ARS)"})
-
+    # Lógica personalizada para manejar solicitudes específicas
     if "buscar propiedades" in user_message.lower():
         return jsonify({'response': "¿En qué ciudad deseas buscar propiedades? ¿Cuál es tu rango de precio?"})
 
-    # Nueva lógica para manejar la búsqueda de propiedades
-    if "en" in user_message.lower() and "habitaciones" in user_message.lower() and "usd" in user_message.lower():
-        # Extraer información de la búsqueda
-        # Ejemplo: "en ballester, 2 habitaciones y 5000 USD al mes"
-        # Aquí deberías implementar un parser para extraer la ciudad, habitaciones y precio
-        # Para simplificar, asumiremos que el formato es siempre el mismo
+    if "habitaciones" in user_message.lower() and "usd" in user_message.lower():
         try:
-            # Extraer parámetros de búsqueda
+            # Parsear la información proporcionada por el usuario
             parts = user_message.split(",")
-            location = parts[0].replace("en", "").strip()  # Ciudad
-            room_info = parts[1].strip()  # Habitaciones y precio
+            location = parts[0].replace("en", "").strip()
+            room_info = parts[1].strip()
             num_rooms = int(room_info.split("habitaciones")[0].strip())
             budget = int(room_info.split("USD")[0].split()[-1].strip())
 
+            exchange_rate = get_exchange_rate()
+            if not exchange_rate:
+                return jsonify({'response': "No se pudo obtener el tipo de cambio. Intente nuevamente más tarde."})
+
             # Generar parámetros de búsqueda
             search_params = {
-                "operation_types": [2],  # Solo Rent
-                "property_types": [2],    # Solo Apartment
-                "price_from": 0,          # Puedes ajustar esto según sea necesario
-                "price_to": budget,       # Presupuesto máximo
-                "currency": "USD",        # La búsqueda se realiza en USD
-                "location": location,      # Ciudad
-                "rooms": num_rooms         # Habitaciones
+                "operation_types": [2],  # Rent
+                "property_types": [2],   # Apartment
+                "price_from": 0,
+                "price_to": int(budget * exchange_rate),
+                "currency": "ARS",
+                "location": location,
+                "rooms": num_rooms
             }
 
             # Realizar la búsqueda
@@ -89,7 +85,6 @@ def generate_response():
                     response_message += f"   - **Dirección:** {property['address']}\n"
                     response_message += f"   - **Precio:** {property['price']} ARS al mes\n"
                     response_message += f"   - **Detalles:** [Ver más detalles]({property['link']})\n"
-                    response_message += f"   - ![Foto]({property['image']})\n\n"
                 return jsonify({'response': response_message})
             else:
                 return jsonify({'response': "No se encontraron propiedades que coincidan con tus criterios."})
@@ -105,8 +100,6 @@ def generate_response():
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
-        else:
-            thread_id = user_threads[user_id]
 
         # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
