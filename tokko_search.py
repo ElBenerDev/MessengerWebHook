@@ -5,13 +5,13 @@ import json
 # Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(asctime)s 1- %(levelname)s - %(message)s"
 )
 
 # Clave de la API de propiedades
 API_KEY = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
 
-# URL de la API de tipo de cambio
+# URL de la API de tipo de cambio (puedes usar otra fuente si prefieres)
 EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/USD"
 
 def get_exchange_rate():
@@ -38,6 +38,7 @@ def fetch_search_results(search_params):
     try:
         # Convertir los parámetros a JSON
         data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
+        print(f"JSON generado para la búsqueda: {data_param}")  # Depuración
         params = {
             "key": API_KEY,
             "data": data_param,
@@ -55,3 +56,29 @@ def fetch_search_results(search_params):
     except Exception as e:
         logging.exception("Error al conectarse a la API de búsqueda.")
         return None
+
+def perform_search():
+    """
+    Realiza la búsqueda de propiedades y devuelve los resultados en formato JSON.
+    """
+    # Obtener el tipo de cambio
+    exchange_rate = get_exchange_rate()
+    if not exchange_rate:
+        return "No se pudo obtener el tipo de cambio. Intente nuevamente más tarde."
+
+    # Parámetros predeterminados para la búsqueda
+    search_params = {
+        "operation_types": [2],  # Solo Rent
+        "property_types": [2],   # Solo Apartment
+        "price_from": 0 * exchange_rate,
+        "price_to": 10000 * exchange_rate,
+        "currency": "ARS"
+    }
+
+    # Realizar la búsqueda
+    search_results = fetch_search_results(search_params)
+    
+    if search_results:
+        return json.dumps(search_results, indent=4)
+    else:
+        return "No se encontraron resultados."

@@ -50,7 +50,6 @@ def generate_response():
     try:
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
-            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
@@ -76,6 +75,12 @@ def generate_response():
         # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+
+        # Si el mensaje está relacionado con una búsqueda de propiedades, invocar la búsqueda
+        if "buscar propiedades" in user_message.lower():  # Puedes ajustar esta lógica
+            from tokko_search import perform_search  # Importa el código de búsqueda por separado
+            search_results = perform_search()  # Realiza la búsqueda
+            assistant_message += "\n\nResultados de la búsqueda:\n" + search_results  # Agrega los resultados
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
