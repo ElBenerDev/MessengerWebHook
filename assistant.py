@@ -97,11 +97,14 @@ def generate_response():
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
-        # Crear un nuevo hilo para el usuario si no existe
+        # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
+            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
+        else:
+            thread_id = user_threads[user_id]
 
         # Actualizar parámetros del usuario
         updated_parameters = update_user_parameters(user_id, user_message)
@@ -114,16 +117,17 @@ def generate_response():
             "property_types" in updated_parameters
         )
 
+        # Si no se tiene toda la información, dejar que el asistente guíe la conversación
         if not params_complete:
-            # Dejar que el asistente de OpenAI maneje el diálogo
-            assistant_response = client.chat_complete(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "Eres un asistente que ayuda a buscar propiedades. Guía al usuario para obtener los datos necesarios."},
-                    {"role": "user", "content": user_message}
-                ]
-            )
-            assistant_message = assistant_response['choices'][0]['message']['content']
+            event_handler = EventHandler()
+            with client.beta.threads.runs.stream(
+                thread_id=user_threads[user_id],
+                assistant_id=assistant_id,
+                event_handler=event_handler,
+            ) as stream:
+                stream.until_done()
+
+            assistant_message = event_handler.assistant_message
         else:
             # Obtener el tipo de cambio
             exchange_rate = get_exchange_rate()
