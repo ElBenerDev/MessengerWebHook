@@ -83,9 +83,13 @@ def generate_response():
         # Verificar si el asistente ya tiene toda la información necesaria
         if "tengo" in user_message.lower() or "presupuesto" in user_message.lower():  # Cambiado para buscar "tengo"
             # Extraer el presupuesto usando una expresión regular
-            match = re.search(r'(\d+(\.\d+)?)\s*USD', user_message)
+            match = re.search(r'([\d.]+)', user_message)  # Busca un número en el mensaje
             if match:
-                budget = float(match.group(1))  # Extraer el presupuesto
+                # Convertir el presupuesto a un número eliminando puntos y comas
+                budget_str = match.group(1).replace('.', '').replace(',', '.')  # Cambia el formato
+                budget = float(budget_str)  # Convertir a float
+                logger.info(f"Presupuesto extraído: {budget}")
+
                 search_params = ask_user_for_parameters()  # Generar parámetros de búsqueda
                 if not search_params:
                     return jsonify({'response': assistant_message, 'error': "No se pudieron generar parámetros de búsqueda."}), 400
