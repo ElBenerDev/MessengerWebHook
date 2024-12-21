@@ -97,37 +97,54 @@ def generate_response():
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
+        # Crear un nuevo hilo para el usuario si no existe
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
-        else:
-            thread_id = user_threads[user_id]
 
+        # Actualizar parámetros del usuario
         updated_parameters = update_user_parameters(user_id, user_message)
-        exchange_rate = get_exchange_rate()
-        if not exchange_rate:
-            return jsonify({'response': "Error al obtener el tipo de cambio."}), 500
 
-        updated_parameters["price_from"] = int(updated_parameters["price_from"] * exchange_rate)
-        updated_parameters["price_to"] = int(updated_parameters["price_to"] * exchange_rate)
-
-        search_results = fetch_search_results(updated_parameters)
-        if not search_results:
-            assistant_message = "No se encontraron resultados para tu búsqueda."
+        # Verificar si faltan datos antes de proceder a la búsqueda
+        if "precio mínimo" not in user_message.lower() or "precio máximo" not in user_message.lower():
+            assistant_message = (
+                "Gracias por tu mensaje. Para continuar, por favor indícame el rango de precios que buscas "
+                "(por ejemplo: 'precio mínimo 50000, precio máximo 200000')."
+            )
+        elif "venta" not in user_message.lower() and "alquiler" not in user_message.lower():
+            assistant_message = (
+                "¿Estás buscando propiedades en venta o en alquiler? Por favor, indícamelo para continuar."
+            )
         else:
-            properties = search_results.get("objects", [])
-            assistant_message = f"Encontré {len(properties)} propiedades:\n"
-            for idx, prop in enumerate(properties, 1):
-                assistant_message += f"{idx}. {prop['title']} - {prop['price']} {prop['currency']}\n"
+            # Obtener el tipo de cambio
+            exchange_rate = get_exchange_rate()
+            if not exchange_rate:
+                return jsonify({'response': "Error al obtener el tipo de cambio."}), 500
 
-        logger.info(f"Resultados generados: {assistant_message}")
+            # Convertir precios a ARS usando el tipo de cambio
+            updated_parameters["price_from"] = int(updated_parameters["price_from"] * exchange_rate)
+            updated_parameters["price_to"] = int(updated_parameters["price_to"] * exchange_rate)
+
+            # Realizar la búsqueda de propiedades
+            search_results = fetch_search_results(updated_parameters)
+            if not search_results:
+                assistant_message = "No se encontraron resultados para tu búsqueda."
+            else:
+                properties = search_results.get("objects", [])
+                assistant_message = f"Encontré {len(properties)} propiedades:\n"
+                for idx, prop in enumerate(properties, 1):
+                    title = prop.get('title', 'Sin título')
+                    price = prop.get('price', 'N/A')
+                    currency = prop.get('currency', 'N/A')
+                    assistant_message += f"{idx}. {title} - {price} {currency}\n"
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
     return jsonify({'response': assistant_message})
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
