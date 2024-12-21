@@ -3,7 +3,10 @@ import logging
 import json
 
 # Configuración de logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s 1- %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s 1- %(levelname)s - %(message)s"
+)
 
 # Clave de la API de propiedades
 API_KEY = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
@@ -54,52 +57,65 @@ def fetch_search_results(search_params):
         logging.exception("Error al conectarse a la API de búsqueda.")
         return None
 
-def search_with_user_budget(budget):
+def ask_user_for_parameters():
     """
-    Realiza la búsqueda utilizando el presupuesto del usuario.
+    Genera parámetros de búsqueda predeterminados sin interacción del usuario.
     """
+    # Parámetros predeterminados
+    operation_ids = [2]  # Solo Rent
+    property_ids = [2]   # Solo Apartment
+
     # Obtener el tipo de cambio
     exchange_rate = get_exchange_rate()
     if not exchange_rate:
         print("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
         return None
 
-    # Parámetros de búsqueda utilizando el presupuesto
+    # Rango de precios predeterminado (en USD convertido a ARS)
+    price_from = int(0 * exchange_rate)
+    price_to = int(10000 * exchange_rate)
+
+    # Construir los parámetros de búsqueda
     search_params = {
-        "operation_types": [2],  # Solo Rent
-        "property_types": [2],   # Solo Apartment
-        "price_from": 0 * exchange_rate,
-        "price_to": budget * exchange_rate,  # Usamos el presupuesto del usuario
+        "operation_types": operation_ids,
+        "property_types": property_ids,
+        "price_from": price_from,
+        "price_to": price_to,
         "currency": "ARS"  # La búsqueda se realiza en ARS
     }
 
-    # Realizar la búsqueda
+    return search_params
+
+def main():
+    logging.info("Iniciando el programa.")
+
+    # Paso 1: Generar parámetros de búsqueda predeterminados
+    search_params = ask_user_for_parameters()
+    if not search_params:
+        return
+
+    # Paso 2: Realizar la búsqueda con los parámetros seleccionados
+    print("\nRealizando la búsqueda con los parámetros seleccionados...")
     search_results = fetch_search_results(search_params)
+
+    if not search_results:
+        print("No se pudieron obtener resultados desde la API de búsqueda.")
+        return
+
+    # Paso 3: Mostrar todos los resultados de la búsqueda
+    print("\nResultados de la búsqueda:")
     
-    if search_results:
-        return json.dumps(search_results, indent=4)
+    # Verificar si hay resultados
+    if 'objects' in search_results:
+        for idx, prop in enumerate(search_results['objects']):
+            print(f"\nPropiedad #{idx + 1}:")
+            print(f"Dirección: {prop.get('address')}")
+            print(f"Precio: {prop['operations'][0]['prices'][0]['price']} ARS")
+            print(f"Descripción: {prop.get('description')}")
+            print(f"Teléfono: {prop['branch']['phone']}")
+            print(f"Fotos: {', '.join([photo['image'] for photo in prop.get('photos', [])])}")
     else:
-        return "No se encontraron resultados."
+        print("No se encontraron propiedades.")
 
-# Función que simula la interacción del asistente (por ejemplo, recibes el presupuesto del usuario)
-def assistant_interaction():
-    """
-    Simula la interacción con el usuario donde se le pregunta su presupuesto.
-    """
-    # Supongamos que el presupuesto es recibido como 5000 USD
-    user_budget = 5000  # Este presupuesto debe ser obtenido de la conversación
-
-    print(f"\nGracias por la info. Déjame buscar opciones de departamentos dentro de tu presupuesto de {user_budget} USD. Un momento, por favor.")
-
-    # Llamar a la función de búsqueda con el presupuesto proporcionado
-    search_results = search_with_user_budget(user_budget)
-
-    if search_results:
-        print("\nResultados de la búsqueda:")
-        print(search_results)
-    else:
-        print("\nNo se encontraron resultados dentro de ese presupuesto.")
-
-# Ejecutar la función principal
 if __name__ == "__main__":
-    assistant_interaction()
+    main()
