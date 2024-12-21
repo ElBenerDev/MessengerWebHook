@@ -5,6 +5,7 @@ from typing_extensions import override
 import os
 import logging
 import json
+from tokko_search import fetch_search_results, get_exchange_rate
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -53,19 +54,17 @@ def update_user_parameters(user_id, message):
 
     parameters = user_parameters[user_id]
 
-    # Logs para entender qué parámetros se están actualizando
     logger.info(f"Parámetros antes de procesar el mensaje: {parameters}")
     logger.info(f"Mensaje recibido para actualizar parámetros: {message}")
 
-    # Procesar el mensaje del usuario para actualizar parámetros
     if "venta" in message.lower():
-        parameters["operation_types"] = [1]  # Sale
+        parameters["operation_types"] = [1]
     if "alquiler" in message.lower():
-        parameters["operation_types"] = [2]  # Rent
+        parameters["operation_types"] = [2]
     if "apartamento" in message.lower():
-        parameters["property_types"] = [2]  # Apartment
+        parameters["property_types"] = [2]
     if "casa" in message.lower():
-        parameters["property_types"] = [3]  # House
+        parameters["property_types"] = [3]
     if "precio mínimo" in message.lower():
         try:
             price_from = int(message.split("precio mínimo")[-1].strip().split()[0])
@@ -79,7 +78,6 @@ def update_user_parameters(user_id, message):
         except ValueError:
             logger.warning("No se pudo procesar el precio máximo del mensaje.")
 
-    # Validar que price_from no sea mayor que price_to
     if parameters["price_from"] > parameters["price_to"]:
         logger.warning("El precio mínimo es mayor que el precio máximo. Ajustando valores.")
         parameters["price_from"] = 0
@@ -99,40 +97,31 @@ def generate_response():
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
-        # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
-            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
         else:
             thread_id = user_threads[user_id]
 
-        # Actualizar parámetros del usuario según el mensaje
         updated_parameters = update_user_parameters(user_id, user_message)
+        exchange_rate = get_exchange_rate()
+        if not exchange_rate:
+            return jsonify({'response': "Error al obtener el tipo de cambio."}), 500
 
-        # Enviar el mensaje del usuario al hilo existente
-        client.beta.threads.messages.create(
-            thread_id=user_threads[user_id],
-            role="user",
-            content=user_message
-        )
+        updated_parameters["price_from"] = int(updated_parameters["price_from"] * exchange_rate)
+        updated_parameters["price_to"] = int(updated_parameters["price_to"] * exchange_rate)
 
-        # Crear y manejar la respuesta del asistente
-        event_handler = EventHandler()
-        with client.beta.threads.runs.stream(
-            thread_id=user_threads[user_id],
-            assistant_id=assistant_id,
-            event_handler=event_handler,
-        ) as stream:
-            stream.until_done()
+        search_results = fetch_search_results(updated_parameters)
+        if not search_results:
+            assistant_message = "No se encontraron resultados para tu búsqueda."
+        else:
+            properties = search_results.get("objects", [])
+            assistant_message = f"Encontré {len(properties)} propiedades:\n"
+            for idx, prop in enumerate(properties, 1):
+                assistant_message += f"{idx}. {prop['title']} - {prop['price']} {prop['currency']}\n"
 
-        # Obtener el mensaje generado por el asistente
-        assistant_message = event_handler.assistant_message
-
-        # Agregar los parámetros actualizados a la respuesta
-        assistant_message += f"\n\nParámetros actuales: {json.dumps(updated_parameters, indent=2)}"
-        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+        logger.info(f"Resultados generados: {assistant_message}")
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
