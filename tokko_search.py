@@ -102,20 +102,9 @@ def main():
         print("No se pudieron obtener resultados desde la API de búsqueda.")
         return
 
-    # Paso 3: Mostrar todos los resultados de la búsqueda
+    # Paso 3: Mostrar los resultados de la búsqueda
     print("\nResultados de la búsqueda:")
-    
-    # Verificar si hay resultados
-    if 'objects' in search_results:
-        for idx, prop in enumerate(search_results['objects']):
-            print(f"\nPropiedad #{idx + 1}:")
-            print(f"Dirección: {prop.get('address')}")
-            print(f"Precio: {prop['operations'][0]['prices'][0]['price']} ARS")
-            print(f"Descripción: {prop.get('description')}")
-            print(f"Teléfono: {prop['branch']['phone']}")
-            print(f"Fotos: {', '.join([photo['image'] for photo in prop.get('photos', [])])}")
-    else:
-        print("No se encontraron propiedades.")
+    print(json.dumps(search_results, indent=4))
 
 if __name__ == "__main__":
     main()

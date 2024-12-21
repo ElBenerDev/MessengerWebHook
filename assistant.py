@@ -1,119 +1,102 @@
-import requests
+from flask import Flask, request, jsonify
+from openai import OpenAI
+from openai import AssistantEventHandler
+from typing_extensions import override
+import os
 import logging
+import requests
 import json
+from tokko_search import ask_user_for_parameters, fetch_search_results  # Importa las funciones desde tokko_search.py
 
 # Configuración de logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s 1- %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Clave de la API de propiedades
-API_KEY = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
+app = Flask(__name__)
 
-# URL de la API de tipo de cambio (puedes usar otra fuente si prefieres)
-EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/USD"
+# Configura tu cliente con la API key desde el entorno
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-def get_exchange_rate():
-    """
-    Obtiene el tipo de cambio actual de USD a ARS.
-    """
+# ID del asistente
+assistant_id = os.getenv("ASSISTANT_ID", "asst_QUrcIPAsQLse1tDBIzVdw5pt")
+
+# Diccionario para almacenar el thread_id de cada usuario
+user_threads = {}
+
+# Crear un manejador de eventos para manejar el stream de respuestas del asistente
+class EventHandler(AssistantEventHandler):
+    def __init__(self):
+        super().__init__()
+        self.assistant_message = ""
+
+    @override
+    def on_text_created(self, text) -> None:
+        print(f"Asistente: {text.value}", end="", flush=True)
+        self.assistant_message += text.value
+
+    @override
+    def on_text_delta(self, delta, snapshot):
+        print(delta.value, end="", flush=True)
+        self.assistant_message += delta.value
+
+@app.route('/generate-response', methods=['POST'])
+def generate_response():
+    data = request.json
+    user_message = data.get('message')
+    user_id = data.get('sender_id')
+
+    if not user_message or not user_id:
+        return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
+
+    logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
+
     try:
-        response = requests.get(EXCHANGE_RATE_API_URL)
-        if response.status_code == 200:
-            data = response.json()
-            return data["rates"]["ARS"]  # Tipo de cambio de USD a ARS
+        # Verificar si ya existe un thread_id para este usuario
+        if user_id not in user_threads:
+            thread = client.beta.threads.create()
+            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
+            user_threads[user_id] = thread.id
         else:
-            logging.error(f"Error al obtener el tipo de cambio. Código de estado: {response.status_code}")
-            return None
+            thread_id = user_threads[user_id]
+
+        # Enviar el mensaje del usuario al hilo existente
+        client.beta.threads.messages.create(
+            thread_id=user_threads[user_id],
+            role="user",
+            content=user_message
+        )
+
+        # Crear y manejar la respuesta del asistente
+        event_handler = EventHandler()
+        with client.beta.threads.runs.stream(
+            thread_id=user_threads[user_id],
+            assistant_id=assistant_id,
+            event_handler=event_handler,
+        ) as stream:
+            stream.until_done()
+
+        # Obtener el mensaje generado por el asistente
+        assistant_message = event_handler.assistant_message
+        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+
+        # Verificar si el asistente ya tiene toda la información necesaria
+        if "presupuesto máximo" in user_message.lower():  # El presupuesto ya se proporcionó
+            budget = float(user_message.split(" ")[0])  # Suponemos que el mensaje contiene el presupuesto
+            search_params = ask_user_for_parameters()  # Generar parámetros de búsqueda
+            if not search_params:
+                return jsonify({'response': assistant_message, 'error': "No se pudieron generar parámetros de búsqueda."}), 400
+
+            search_results = fetch_search_results(search_params)  # Realiza la búsqueda usando el presupuesto
+            if search_results:
+                assistant_message += "\n\nAquí te dejo algunas opciones que pueden interesarte:\n" + json.dumps(search_results, indent=4)
+            else:
+                assistant_message += "\n\nNo se encontraron resultados para tu búsqueda."
+
     except Exception as e:
-        logging.exception("Error al conectarse a la API de tipo de cambio.")
-        return None
+        logger.error(f"Error al generar respuesta: {str(e)}")
+        return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
-def fetch_search_results(search_params):
-    """
-    Función para realizar la búsqueda en la API con los parámetros seleccionados.
-    """
-    endpoint = "https://www.tokkobroker.com/api/v1/property/search/"
-    try:
-        # Convertir los parámetros a JSON
-        data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
-        print(f"JSON generado para la búsqueda: {data_param}")  # Depuración
-        params = {
-            "key": API_KEY,
-            "data": data_param,
-            "format": "json",
-            "limit": 20
-        }
-        response = requests.get(endpoint, params=params)
-        logging.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logging.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
-            logging.error(f"Respuesta del servidor: {response.text}")
-            return None
-    except Exception as e:
-        logging.exception("Error al conectarse a la API de búsqueda.")
-        return None
+    return jsonify({'response': assistant_message})
 
-def ask_user_for_parameters():
-    """
-    Genera parámetros de búsqueda predeterminados sin interacción del usuario.
-    """
-    # Parámetros predeterminados
-    operation_ids = [2]  # Solo Rent
-    property_ids = [2]   # Solo Apartment
-
-    # Obtener el tipo de cambio
-    exchange_rate = get_exchange_rate()
-    if not exchange_rate:
-        print("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
-        return None
-
-    # Rango de precios predeterminados (en USD convertido a ARS)
-    price_from = int(0 * exchange_rate)
-    price_to = int(10000 * exchange_rate)
-
-    # Construir los parámetros de búsqueda
-    search_params = {
-        "operation_types": operation_ids,
-        "property_types": property_ids,
-        "price_from": price_from,
-        "price_to": price_to,
-        "currency": "ARS"  # La búsqueda se realiza en ARS
-    }
-
-    return search_params
-
-def main():
-    logging.info("Iniciando el programa.")
-
-    # Paso 1: Generar parámetros de búsqueda predeterminados
-    search_params = ask_user_for_parameters()
-    if not search_params:
-        return
-
-    # Paso 2: Realizar la búsqueda con los parámetros seleccionados
-    print("\nRealizando la búsqueda con los parámetros seleccionados...")
-    search_results = fetch_search_results(search_params)
-
-    if not search_results:
-        print("No se pudieron obtener resultados desde la API de búsqueda.")
-        return
-
-    # Paso 3: Mostrar los resultados
-    print("\nResultados de la búsqueda:")
-    if 'objects' in search_results:
-        for idx, prop in enumerate(search_results['objects']):
-            print(f"\nPropiedad #{idx + 1}:")
-            print(f"Dirección: {prop.get('address', 'No disponible')}")
-            print(f"Precio: {prop['operations'][0]['prices'][0]['price']} ARS")
-            print(f"Descripción: {prop.get('description', 'No disponible')}")
-            print(f"Teléfono: {prop['branch']['phone']}")
-            print(f"Fotos: {', '.join([photo['image'] for photo in prop.get('photos', [])])}")
-    else:
-        print("No se encontraron propiedades.")
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
