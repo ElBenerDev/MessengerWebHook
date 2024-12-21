@@ -4,7 +4,7 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import os
 import logging
-from tokko_search import fetch_search_results, get_exchange_rate  # Importar funciones desde search_service
+import json
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -47,51 +47,7 @@ def generate_response():
         return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
-
-    # Lógica personalizada para manejar solicitudes específicas
-    if "buscar propiedades" in user_message.lower():
-        return jsonify({'response': "¿En qué ciudad deseas buscar propiedades? ¿Cuál es tu rango de precio?"})
-
-    if "habitaciones" in user_message.lower() and "usd" in user_message.lower():
-        try:
-            # Parsear la información proporcionada por el usuario
-            parts = user_message.split(",")
-            location = parts[0].replace("en", "").strip()
-            room_info = parts[1].strip()
-            num_rooms = int(room_info.split("habitaciones")[0].strip())
-            budget = int(room_info.split("USD")[0].split()[-1].strip())
-
-            exchange_rate = get_exchange_rate()
-            if not exchange_rate:
-                return jsonify({'response': "No se pudo obtener el tipo de cambio. Intente nuevamente más tarde."})
-
-            # Generar parámetros de búsqueda
-            search_params = {
-                "operation_types": [2],  # Rent
-                "property_types": [2],   # Apartment
-                "price_from": 0,
-                "price_to": int(budget * exchange_rate),
-                "currency": "ARS",
-                "location": location,
-                "rooms": num_rooms
-            }
-
-            # Realizar la búsqueda
-            search_results = fetch_search_results(search_params)
-            if search_results:
-                response_message = "Aquí tienes algunas opciones de departamentos en alquiler:\n"
-                for idx, property in enumerate(search_results.get('properties', []), start=1):
-                    response_message += f"{idx}. **{property['title']}**\n"
-                    response_message += f"   - **Dirección:** {property['address']}\n"
-                    response_message += f"   - **Precio:** {property['price']} ARS al mes\n"
-                    response_message += f"   - **Detalles:** [Ver más detalles]({property['link']})\n"
-                return jsonify({'response': response_message})
-            else:
-                return jsonify({'response': "No se encontraron propiedades que coincidan con tus criterios."})
-
-        except Exception as e:
-            logger.error(f"Error al procesar la búsqueda: {str(e)}")
-            return jsonify({'response': "Hubo un error al procesar tu solicitud de búsqueda."}), 500
+    full_log = {"user_id": user_id, "user_message": user_message}
 
     try:
         # Verificar si ya existe un thread_id para este usuario
@@ -100,13 +56,17 @@ def generate_response():
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
+        else:
+            thread_id = user_threads[user_id]
 
         # Enviar el mensaje del usuario al hilo existente
-        client.beta.threads.messages.create(
+        response = client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
             role="user",
             content=user_message
         )
+        logger.info(f"Solicitud enviada a OpenAI: {response}")
+        full_log["openai_request"] = response.to_dict()
 
         # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
@@ -120,12 +80,15 @@ def generate_response():
         # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+        full_log["assistant_response"] = assistant_message
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
-        return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+        full_log["error"] = str(e)
+        return jsonify({'response': f"Error al generar respuesta: {str(e)}", 'log': full_log}), 500
 
-    return jsonify({'response': assistant_message})
+    # Incluir el log en la respuesta solo para depuración
+    return jsonify({'response': assistant_message, 'log': full_log})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
