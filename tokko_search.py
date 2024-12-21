@@ -3,10 +3,7 @@ import logging
 import json
 
 # Configuración de logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s 1- %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s 1- %(levelname)s - %(message)s")
 
 # Clave de la API de propiedades
 API_KEY = "34430fc661d5b961de6fd53a9382f7a232de3ef0"
@@ -57,22 +54,23 @@ def fetch_search_results(search_params):
         logging.exception("Error al conectarse a la API de búsqueda.")
         return None
 
-def perform_search(budget):
+def search_with_user_budget(budget):
     """
-    Realiza la búsqueda de propiedades utilizando el presupuesto proporcionado.
+    Realiza la búsqueda utilizando el presupuesto del usuario.
     """
     # Obtener el tipo de cambio
     exchange_rate = get_exchange_rate()
     if not exchange_rate:
-        return "No se pudo obtener el tipo de cambio. Intente nuevamente más tarde."
+        print("No se pudo obtener el tipo de cambio. Intente nuevamente más tarde.")
+        return None
 
-    # Parámetros predeterminados para la búsqueda
+    # Parámetros de búsqueda utilizando el presupuesto
     search_params = {
         "operation_types": [2],  # Solo Rent
         "property_types": [2],   # Solo Apartment
         "price_from": 0 * exchange_rate,
-        "price_to": budget * exchange_rate,  # Usamos el presupuesto como precio máximo
-        "currency": "ARS"
+        "price_to": budget * exchange_rate,  # Usamos el presupuesto del usuario
+        "currency": "ARS"  # La búsqueda se realiza en ARS
     }
 
     # Realizar la búsqueda
@@ -82,3 +80,26 @@ def perform_search(budget):
         return json.dumps(search_results, indent=4)
     else:
         return "No se encontraron resultados."
+
+# Función que simula la interacción del asistente (por ejemplo, recibes el presupuesto del usuario)
+def assistant_interaction():
+    """
+    Simula la interacción con el usuario donde se le pregunta su presupuesto.
+    """
+    # Supongamos que el presupuesto es recibido como 5000 USD
+    user_budget = 5000  # Este presupuesto debe ser obtenido de la conversación
+
+    print(f"\nGracias por la info. Déjame buscar opciones de departamentos dentro de tu presupuesto de {user_budget} USD. Un momento, por favor.")
+
+    # Llamar a la función de búsqueda con el presupuesto proporcionado
+    search_results = search_with_user_budget(user_budget)
+
+    if search_results:
+        print("\nResultados de la búsqueda:")
+        print(search_results)
+    else:
+        print("\nNo se encontraron resultados dentro de ese presupuesto.")
+
+# Ejecutar la función principal
+if __name__ == "__main__":
+    assistant_interaction()
