@@ -57,9 +57,9 @@ def fetch_search_results(search_params):
         logging.exception("Error al conectarse a la API de búsqueda.")
         return None
 
-def perform_search():
+def perform_search(budget):
     """
-    Realiza la búsqueda de propiedades y devuelve los resultados en formato JSON.
+    Realiza la búsqueda de propiedades utilizando el presupuesto proporcionado.
     """
     # Obtener el tipo de cambio
     exchange_rate = get_exchange_rate()
@@ -71,7 +71,7 @@ def perform_search():
         "operation_types": [2],  # Solo Rent
         "property_types": [2],   # Solo Apartment
         "price_from": 0 * exchange_rate,
-        "price_to": 10000 * exchange_rate,
+        "price_to": budget * exchange_rate,  # Usamos el presupuesto como precio máximo
         "currency": "ARS"
     }
 

@@ -76,11 +76,13 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Si el mensaje está relacionado con una búsqueda de propiedades, invocar la búsqueda
-        if "buscar propiedades" in user_message.lower():  # Puedes ajustar esta lógica
-            from tokko_search import perform_search  # Importa el código de búsqueda por separado
-            search_results = perform_search()  # Realiza la búsqueda
-            assistant_message += "\n\nResultados de la búsqueda:\n" + search_results  # Agrega los resultados
+        # Verificar si el asistente ya tiene toda la información necesaria
+        if "presupuesto máximo" in user_message.lower():  # El presupuesto ya se proporcionó
+            budget = float(user_message.split(" ")[0])  # Suponemos que el mensaje contiene el presupuesto
+            from tokko_search import perform_search  # Importa el archivo de búsqueda
+            search_results = perform_search(budget)  # Realiza la búsqueda usando el presupuesto
+
+            assistant_message += "\n\nAquí te dejo algunas opciones que pueden interesarte:\n" + search_results
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
