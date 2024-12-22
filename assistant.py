@@ -87,6 +87,8 @@ def generate_response():
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
+    response_message = ""  # Inicializar response_message aquí
+
     try:
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
