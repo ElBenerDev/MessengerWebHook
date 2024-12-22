@@ -118,7 +118,7 @@ def generate_response():
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
         # Ejecutar la búsqueda con parámetros predeterminados
-        operation_ids = [2]  # Solo Rent
+        operation_ids = [1]  # Solo Rent
         property_ids = [2]   # Solo Apartment
 
         # Obtener el tipo de cambio
@@ -128,7 +128,7 @@ def generate_response():
 
         # Rango de precios predeterminado (en USD convertido a ARS)
         price_from = int(0 * exchange_rate)
-        price_to = int(500 * exchange_rate)
+        price_to = int(5000000 * exchange_rate)
 
         # Construir los parámetros de búsqueda
         search_params = {
