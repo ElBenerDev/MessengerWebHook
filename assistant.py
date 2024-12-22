@@ -1,42 +1,15 @@
 from flask import Flask, request, jsonify
-from openai import OpenAI
-from openai import AssistantEventHandler
-from typing_extensions import override
 import os
 import logging
 import requests
 import json
+import time
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-
-# Configura tu cliente con la API key desde el entorno
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# ID del asistente
-assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
-
-# Diccionario para almacenar el thread_id de cada usuario
-user_threads = {}
-
-# Crear un manejador de eventos para manejar el stream de respuestas del asistente
-class EventHandler(AssistantEventHandler):
-    def __init__(self):
-        super().__init__()
-        self.assistant_message = ""
-
-    @override
-    def on_text_created(self, text) -> None:
-        print(f"Asistente: {text.value}", end="", flush=True)
-        self.assistant_message += text.value
-
-    @override
-    def on_text_delta(self, delta, snapshot):
-        print(delta.value, end="", flush=True)
-        self.assistant_message += delta.value
 
 # Función para obtener el tipo de cambio
 def get_exchange_rate():
@@ -75,6 +48,9 @@ def fetch_search_results(search_params):
         logger.exception("Error al conectarse a la API de búsqueda.")
         return None
 
+# Almacenar datos de la conversación
+user_data = {}
+
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
     data = request.json
@@ -86,40 +62,65 @@ def generate_response():
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
-    # Responder al usuario sin importar el mensaje
-    response_message = "Gracias por tu mensaje. Estoy buscando propiedades ahora."
+    # Inicializar datos del usuario si no existe
+    if user_id not in user_data:
+        user_data[user_id] = {
+            "conversation": []  # Para almacenar la conversación
+        }
 
-    # Ejecutar la búsqueda con parámetros predeterminados
-    operation_ids = [2]  # Solo Rent
-    property_ids = [2]   # Solo Apartment
+    # Agregar el mensaje del usuario a la conversación
+    user_data[user_id]["conversation"].append(user_message)
 
-    # Obtener el tipo de cambio
-    exchange_rate = get_exchange_rate()
-    if not exchange_rate:
-        return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
+    # Mantener la conversación
+    response_message = "Gracias por tu mensaje. Estoy aquí para ayudarte. ¿Hay algo más que te gustaría saber antes de que busque propiedades?"
 
-    # Rango de precios predeterminado (en USD convertido a ARS)
-    price_from = int(0 * exchange_rate)
-    price_to = int(500 * exchange_rate)
+    # Si el usuario dice que no necesita más información, ejecutar la búsqueda
+    if "no" in user_message.lower() or "nada más" in user_message.lower():
+        response_message = "Entendido, buscaré propiedades ahora."
 
-    # Construir los parámetros de búsqueda
-    search_params = {
-        "operation_types": operation_ids,
-        "property_types": property_ids,
-        "price_from": price_from,
-        "price_to": price_to,
-        "currency": "ARS"  # La búsqueda se realiza en ARS
-    }
+        # Ejecutar la búsqueda con parámetros predeterminados
+        operation_ids = [2]  # Solo Rent
+        property_ids = [2]   # Solo Apartment
 
-    # Realizar la búsqueda con los parámetros seleccionados
-    logger.info("Realizando la búsqueda con los parámetros predeterminados...")
-    search_results = fetch_search_results(search_params)
+        # Obtener el tipo de cambio
+        exchange_rate = get_exchange_rate()
+        if not exchange_rate:
+            return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
 
-    if not search_results:
-        return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
+        # Rango de precios predeterminado (en USD convertido a ARS)
+        price_from = int(0 * exchange_rate)
+        price_to = int(500 * exchange_rate)
 
-    # Mostrar los resultados de la búsqueda
-    response_message += "\nAquí están los resultados de la búsqueda:\n" + json.dumps(search_results, indent=4)
+        # Construir los parámetros de búsqueda
+        search_params = {
+            "operation_types": operation_ids,
+            "property_types": property_ids,
+            "price_from": price_from,
+            "price_to": price_to,
+            "currency": "ARS"  # La búsqueda se realiza en ARS
+        }
+
+        # Realizar la búsqueda con los parámetros seleccionados
+        logger.info("Realizando la búsqueda con los parámetros predeterminados...")
+        search_results = fetch_search_results(search_params)
+
+        if not search_results:
+            return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
+
+        # Enviar resultados uno por uno
+        response_message += "\nAquí están los resultados de la búsqueda:"
+        for property in search_results.get('properties', []):
+            property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
+                               f"- **Ubicación:** {property.get('location')}\n" \
+                               f"- **Precio:** {property.get('price')} ARS\n" \
+                               f"- **Habitaciones:** {property.get('rooms')}\n" \
+                               f"- **Detalles:** {property.get('details')}\n" \
+                               f"[Ver más detalles]({property.get('url')})"
+            response_message += property_message
+            time.sleep(1)  # Esperar un segundo entre mensajes (opcional)
+
+        # Limpiar datos del usuario después de la búsqueda
+        del user_data[user_id]
 
     logger.info(f"Mensaje generado por el asistente: {response_message}")
     return jsonify({'response': response_message})
