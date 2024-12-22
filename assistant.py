@@ -6,8 +6,10 @@ import os
 import logging
 import requests
 import json
-import re  # Importar re para expresiones regulares
-from tokko_search import ask_user_for_parameters, fetch_search_results  # Importa las funciones desde tokko_search.py
+import re
+
+# Importar funciones de búsqueda
+from tokko_search import get_exchange_rate, fetch_search_results, ask_user_for_parameters
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -57,8 +59,6 @@ def generate_response():
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
-        else:
-            thread_id = user_threads[user_id]
 
         # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
@@ -80,27 +80,31 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Verificar si el asistente ya tiene toda la información necesaria
-        if "tengo" in user_message.lower() or "presupuesto" in user_message.lower():  # Cambiado para buscar "tengo"
+        # Verificar si el asistente necesita realizar una búsqueda
+        if "presupuesto" in user_message.lower():
             # Extraer el presupuesto usando una expresión regular
-            match = re.search(r'([\d.]+)', user_message)  # Busca un número en el mensaje
+            match = re.search(r'([\d.]+)', user_message)
             if match:
-                # Convertir el presupuesto a un número eliminando puntos y comas
-                budget_str = match.group(1).replace('.', '').replace(',', '.')  # Cambia el formato
-                budget = float(budget_str)  # Convertir a float
+                budget_str = match.group(1).replace('.', '').replace(',', '.')
+                budget = float(budget_str)
                 logger.info(f"Presupuesto extraído: {budget}")
 
-                search_params = ask_user_for_parameters()  # Generar parámetros de búsqueda
+                # Obtener parámetros de búsqueda
+                search_params = ask_user_for_parameters()
                 if not search_params:
                     return jsonify({'response': assistant_message, 'error': "No se pudieron generar parámetros de búsqueda."}), 400
 
-                search_results = fetch_search_results(search_params)  # Realiza la búsqueda usando el presupuesto
+                # Actualizar rango de precios con el presupuesto del usuario
+                search_params['price_to'] = int(budget)
+
+                # Realizar la búsqueda
+                search_results = fetch_search_results(search_params)
                 if search_results:
                     assistant_message += "\n\nAquí te dejo algunas opciones que pueden interesarte:\n" + json.dumps(search_results, indent=4)
                 else:
                     assistant_message += "\n\nNo se encontraron resultados para tu búsqueda."
             else:
-                return jsonify({'response': assistant_message, 'error': "No se pudo encontrar un presupuesto válido."}), 400
+                return jsonify({'response': assistant_message, 'error': "No se encontró un presupuesto válido."}), 400
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
