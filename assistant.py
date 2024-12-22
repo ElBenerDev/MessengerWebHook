@@ -77,83 +77,47 @@ def fetch_search_results(search_params):
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
-    data = request.json
-    user_message = data.get('message')
-    user_id = data.get('sender_id')
-
-    if not user_message or not user_id:
-        return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
-
-    logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
+    logger.info("Ejecutando búsqueda de propiedades sin depender de la entrada del usuario.")
 
     try:
-        # Verificar si ya existe un thread_id para este usuario
-        if user_id not in user_threads:
-            # Crear un nuevo hilo de conversación si no existe
-            thread = client.beta.threads.create()
-            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
-            user_threads[user_id] = thread.id
-        else:
-            thread_id = user_threads[user_id]
+        # Generar parámetros de búsqueda predeterminados
+        operation_ids = [2]  # Solo Rent
+        property_ids = [2]   # Solo Apartment
 
-        # Lógica para manejar el tipo de cambio y búsqueda de propiedades
-        if "tipo de cambio" in user_message.lower():
-            exchange_rate = get_exchange_rate()
-            if exchange_rate:
-                response_message = f"El tipo de cambio actual de USD a ARS es: {exchange_rate}"
-            else:
-                response_message = "No se pudo obtener el tipo de cambio."
-        elif "buscar propiedades" in user_message.lower():
-            # Generar parámetros de búsqueda predeterminados
-            operation_ids = [2]  # Solo Rent
-            property_ids = [2]   # Solo Apartment
-            exchange_rate = get_exchange_rate()
-            if not exchange_rate:
-                return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
+        # Obtener el tipo de cambio
+        exchange_rate = get_exchange_rate()
+        if not exchange_rate:
+            return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
 
-            price_from = int(0 * exchange_rate)
-            price_to = int(500 * exchange_rate)
+        # Rango de precios predeterminado (en USD convertido a ARS)
+        price_from = int(0 * exchange_rate)
+        price_to = int(500 * exchange_rate)
 
-            search_params = {
-                "operation_types": operation_ids,
-                "property_types": property_ids,
-                "price_from": price_from,
-                "price_to": price_to,
-                "currency": "ARS"
-            }
+        # Construir los parámetros de búsqueda
+        search_params = {
+            "operation_types": operation_ids,
+            "property_types": property_ids,
+            "price_from": price_from,
+            "price_to": price_to,
+            "currency": "ARS"  # La búsqueda se realiza en ARS
+        }
 
-            search_results = fetch_search_results(search_params)
-            if search_results:
-                response_message = json.dumps(search_results, indent=4)
-            else:
-                response_message = "No se pudieron obtener resultados desde la API de búsqueda."
-        else:
-            # Enviar el mensaje del usuario al hilo existente
-            client.beta.threads.messages.create(
-                thread_id=user_threads[user_id],
-                role="user",
-                content=user_message
-            )
+        # Realizar la búsqueda con los parámetros seleccionados
+        logger.info("Realizando la búsqueda con los parámetros predeterminados...")
+        search_results = fetch_search_results(search_params)
 
-            # Crear y manejar la respuesta del asistente
-            event_handler = EventHandler()
-            with client.beta.threads.runs.stream(
-                thread_id=user_threads[user_id],
-                assistant_id=assistant_id,
-                event_handler=event_handler,
-            ) as stream:
-                stream.until_done()
+        if not search_results:
+            return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
 
-            # Obtener el mensaje generado por el asistente
-            response_message = event_handler.assistant_message
+        # Mostrar los resultados de la búsqueda
+        logger.info("Resultados de la búsqueda:")
+        logger.info(json.dumps(search_results, indent=4))
 
-        logger.info(f"Mensaje generado por el asistente: {response_message}")
+        return jsonify({'response': search_results})
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
-
-    return jsonify({'response': response_message})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
