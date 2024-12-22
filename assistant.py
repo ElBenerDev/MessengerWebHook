@@ -20,6 +20,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # ID del asistente
 assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
+# Diccionario para almacenar el thread_id de cada usuario
+user_threads = {}
+
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
@@ -85,16 +88,26 @@ def generate_response():
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
-        # Enviar el mensaje del usuario al asistente
-        event_handler = EventHandler()
+        # Verificar si ya existe un thread_id para este usuario
+        if user_id not in user_threads:
+            # Crear un nuevo hilo de conversación si no existe
+            thread = client.beta.threads.create()
+            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
+            user_threads[user_id] = thread.id
+        else:
+            thread_id = user_threads[user_id]
+
+        # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
-            thread_id=user_id,  # Usar el ID del usuario como hilo
+            thread_id=user_threads[user_id],
             role="user",
             content=user_message
         )
 
+        # Crear y manejar la respuesta del asistente
+        event_handler = EventHandler()
         with client.beta.threads.runs.stream(
-            thread_id=user_id,
+            thread_id=user_threads[user_id],
             assistant_id=assistant_id,
             event_handler=event_handler,
         ) as stream:
@@ -103,13 +116,6 @@ def generate_response():
         # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
-
-        # Aquí puedes agregar lógica para que el asistente haga preguntas
-        # Por ejemplo, preguntar al usuario qué tipo de propiedad busca
-        if "buscar" in user_message.lower() or "propiedad" in user_message.lower():
-            response_message = "Entendido, voy a buscar propiedades para ti. Un momento por favor..."
-        else:
-            response_message = "¿Te gustaría buscar propiedades? Dime qué tipo de propiedad te interesa."
 
         # Ejecutar la búsqueda con parámetros predeterminados
         operation_ids = [2]  # Solo Rent
@@ -141,7 +147,7 @@ def generate_response():
             return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
 
         # Enviar resultados uno por uno
-        response_message += "\nAquí están los resultados de la búsqueda:"
+        response_message = "\nAquí están los resultados de la búsqueda:"
         for property in search_results.get('properties', []):
             property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
                                f"- **Ubicación:** {property.get('location')}\n" \
@@ -151,6 +157,9 @@ def generate_response():
                                f"[Ver más detalles]({property.get('url')})"
             response_message += property_message
             time.sleep(1)  # Esperar un segundo entre mensajes (opcional)
+
+        # Limpiar datos del usuario después de la búsqueda
+        del user_threads[user_id]
 
         return jsonify({'response': assistant_message + response_message})
 
