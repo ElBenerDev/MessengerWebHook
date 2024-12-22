@@ -77,47 +77,52 @@ def fetch_search_results(search_params):
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
-    logger.info("Ejecutando búsqueda de propiedades sin depender de la entrada del usuario.")
+    data = request.json
+    user_message = data.get('message')
+    user_id = data.get('sender_id')
 
-    try:
-        # Generar parámetros de búsqueda predeterminados
-        operation_ids = [2]  # Solo Rent
-        property_ids = [2]   # Solo Apartment
+    if not user_message or not user_id:
+        return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
 
-        # Obtener el tipo de cambio
-        exchange_rate = get_exchange_rate()
-        if not exchange_rate:
-            return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
+    logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
-        # Rango de precios predeterminado (en USD convertido a ARS)
-        price_from = int(0 * exchange_rate)
-        price_to = int(500 * exchange_rate)
+    # Responder al usuario sin importar el mensaje
+    response_message = "Gracias por tu mensaje. Estoy buscando propiedades ahora."
 
-        # Construir los parámetros de búsqueda
-        search_params = {
-            "operation_types": operation_ids,
-            "property_types": property_ids,
-            "price_from": price_from,
-            "price_to": price_to,
-            "currency": "ARS"  # La búsqueda se realiza en ARS
-        }
+    # Ejecutar la búsqueda con parámetros predeterminados
+    operation_ids = [2]  # Solo Rent
+    property_ids = [2]   # Solo Apartment
 
-        # Realizar la búsqueda con los parámetros seleccionados
-        logger.info("Realizando la búsqueda con los parámetros predeterminados...")
-        search_results = fetch_search_results(search_params)
+    # Obtener el tipo de cambio
+    exchange_rate = get_exchange_rate()
+    if not exchange_rate:
+        return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
 
-        if not search_results:
-            return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
+    # Rango de precios predeterminado (en USD convertido a ARS)
+    price_from = int(0 * exchange_rate)
+    price_to = int(500 * exchange_rate)
 
-        # Mostrar los resultados de la búsqueda
-        logger.info("Resultados de la búsqueda:")
-        logger.info(json.dumps(search_results, indent=4))
+    # Construir los parámetros de búsqueda
+    search_params = {
+        "operation_types": operation_ids,
+        "property_types": property_ids,
+        "price_from": price_from,
+        "price_to": price_to,
+        "currency": "ARS"  # La búsqueda se realiza en ARS
+    }
 
-        return jsonify({'response': search_results})
+    # Realizar la búsqueda con los parámetros seleccionados
+    logger.info("Realizando la búsqueda con los parámetros predeterminados...")
+    search_results = fetch_search_results(search_params)
 
-    except Exception as e:
-        logger.error(f"Error al generar respuesta: {str(e)}")
-        return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+    if not search_results:
+        return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
+
+    # Mostrar los resultados de la búsqueda
+    response_message += "\nAquí están los resultados de la búsqueda:\n" + json.dumps(search_results, indent=4)
+
+    logger.info(f"Mensaje generado por el asistente: {response_message}")
+    return jsonify({'response': response_message})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
