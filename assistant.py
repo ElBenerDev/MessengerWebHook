@@ -119,53 +119,49 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Si el asistente ha terminado la conversación, ejecutar la búsqueda
-        if "buscar propiedades" in user_message.lower() or "busca" in user_message.lower():
-            response_message = "Entendido, buscaré propiedades ahora."
+        # Ejecutar la búsqueda con parámetros predeterminados
+        operation_ids = [2]  # Solo Rent
+        property_ids = [2]   # Solo Apartment
 
-            # Ejecutar la búsqueda con parámetros predeterminados
-            operation_ids = [2]  # Solo Rent
-            property_ids = [2]   # Solo Apartment
+        # Obtener el tipo de cambio
+        exchange_rate = get_exchange_rate()
+        if not exchange_rate:
+            return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
 
-            # Obtener el tipo de cambio
-            exchange_rate = get_exchange_rate()
-            if not exchange_rate:
-                return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
+        # Rango de precios predeterminado (en USD convertido a ARS)
+        price_from = int(0 * exchange_rate)
+        price_to = int(500 * exchange_rate)
 
-            # Rango de precios predeterminado (en USD convertido a ARS)
-            price_from = int(0 * exchange_rate)
-            price_to = int(500 * exchange_rate)
+        # Construir los parámetros de búsqueda
+        search_params = {
+            "operation_types": operation_ids,
+            "property_types": property_ids,
+            "price_from": price_from,
+            "price_to": price_to,
+            "currency": "ARS"  # La búsqueda se realiza en ARS
+        }
 
-            # Construir los parámetros de búsqueda
-            search_params = {
-                "operation_types": operation_ids,
-                "property_types": property_ids,
-                "price_from": price_from,
-                "price_to": price_to,
-                "currency": "ARS"  # La búsqueda se realiza en ARS
-            }
+        # Realizar la búsqueda con los parámetros seleccionados
+        logger.info("Realizando la búsqueda con los parámetros predeterminados...")
+        search_results = fetch_search_results(search_params)
 
-            # Realizar la búsqueda con los parámetros seleccionados
-            logger.info("Realizando la búsqueda con los parámetros predeterminados...")
-            search_results = fetch_search_results(search_params)
+        if not search_results:
+            return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
 
-            if not search_results:
-                return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
+        # Enviar resultados uno por uno
+        response_message += "\nAquí están los resultados de la búsqueda:"
+        for property in search_results.get('properties', []):
+            property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
+                               f"- **Ubicación:** {property.get('location')}\n" \
+                               f"- **Precio:** {property.get('price')} ARS\n" \
+                               f"- **Habitaciones:** {property.get('rooms')}\n" \
+                               f"- **Detalles:** {property.get('details')}\n" \
+                               f"[Ver más detalles]({property.get('url')})"
+            response_message += property_message
+            time.sleep(1)  # Esperar un segundo entre mensajes (opcional)
 
-            # Enviar resultados uno por uno
-            response_message += "\nAquí están los resultados de la búsqueda:"
-            for property in search_results.get('properties', []):
-                property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
-                                   f"- **Ubicación:** {property.get('location')}\n" \
-                                   f"- **Precio:** {property.get('price')} ARS\n" \
-                                   f"- **Habitaciones:** {property.get('rooms')}\n" \
-                                   f"- **Detalles:** {property.get('details')}\n" \
-                                   f"[Ver más detalles]({property.get('url')})"
-                response_message += property_message
-                time.sleep(1)  # Esperar un segundo entre mensajes (opcional)
-
-            # Limpiar datos del usuario después de la búsqueda
-            del user_threads[user_id]
+        # Limpiar datos del usuario después de la búsqueda
+        del user_threads[user_id]
 
         return jsonify({'response': assistant_message + response_message})
 
