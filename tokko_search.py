@@ -73,7 +73,7 @@ def ask_user_for_parameters():
 
     # Rango de precios predeterminado (en USD convertido a ARS)
     price_from = int(0 * exchange_rate)
-    price_to = int(10000 * exchange_rate)
+    price_to = int(500 * exchange_rate)
 
     # Construir los parámetros de búsqueda
     search_params = {
