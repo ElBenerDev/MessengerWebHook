@@ -121,7 +121,9 @@ def generate_response():
         with client.beta.threads.runs.stream(
             thread_id=f"user_thread_{user_id}",
             assistant_id=assistant_id,
-            user_message={"role": "user", "content": user_message},
+            messages=[
+                {"role": "user", "content": user_message}
+            ],
             event_handler=event_handler,
         ) as stream:
             stream.until_done()
@@ -155,6 +157,7 @@ def generate_response():
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
