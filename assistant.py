@@ -21,18 +21,23 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
 # Diccionario para almacenar el estado de cada usuario
-user_threads = {}
+user_state = {}
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
-    def __init__(self):
+    def __init__(self, user_id):
         super().__init__()
         self.assistant_message = ""
+        self.user_id = user_id
 
     @override
     def on_text_created(self, text) -> None:
         print(f"Asistente: {text.value}", end="", flush=True)
         self.assistant_message += text.value
+
+        # Verificar si el asistente terminó de preguntar
+        if "¿Cuál es tu presupuesto máximo?" in text.value:
+            user_state[self.user_id]["ready_for_search"] = True
 
     @override
     def on_text_delta(self, delta, snapshot):
@@ -46,7 +51,7 @@ def get_exchange_rate():
         response = requests.get(EXCHANGE_RATE_API_URL)
         if response.status_code == 200:
             data = response.json()
-            return data["rates"]["ARS"]  # Tipo de cambio de USD a ARS
+            return data["rates"]["ARS"]
         else:
             logger.error(f"Error al obtener el tipo de cambio. Código de estado: {response.status_code}")
             return None
@@ -58,20 +63,32 @@ def get_exchange_rate():
 def fetch_search_results():
     endpoint = "https://www.tokkobroker.com/api/v1/property/search/"
     try:
+        # Parámetros predefinidos
+        exchange_rate = get_exchange_rate()
+        if not exchange_rate:
+            return None
+
+        operation_ids = [1]  # Solo Rent
+        property_ids = [2]   # Solo Apartment
+        price_from = int(0 * exchange_rate)
+        price_to = int(5000000 * exchange_rate)
+
         search_params = {
-            "operation_types": [1],  # Solo Rent
-            "property_types": [2],   # Solo Apartment
-            "price_from": 0,
-            "price_to": 5000000,
-            "currency": "ARS"  # La búsqueda se realiza en ARS
+            "operation_types": operation_ids,
+            "property_types": property_ids,
+            "price_from": price_from,
+            "price_to": price_to,
+            "currency": "ARS"
         }
-        data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
+
+        data_param = json.dumps(search_params, separators=(',', ':'))
         params = {
             "key": os.getenv("PROPERTY_API_KEY"),
             "data": data_param,
             "format": "json",
             "limit": 20
         }
+
         response = requests.get(endpoint, params=params)
         logger.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
         if response.status_code == 200:
@@ -94,48 +111,30 @@ def generate_response():
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
+    # Inicializar el estado del usuario si no existe
+    if user_id not in user_state:
+        user_state[user_id] = {"ready_for_search": False}
+
     try:
-        # Verificar si ya existe un thread_id y estado para este usuario
-        if user_id not in user_threads:
-            thread = client.beta.threads.create()
-            user_threads[user_id] = {
-                "thread_id": thread.id,
-                "state": "gathering_info",  # Estado inicial de la conversación
-                "user_data": {}  # Información recopilada del usuario
-            }
-            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
-
-        user_state = user_threads[user_id]
-
-        # Enviar el mensaje del usuario al hilo existente
-        client.beta.threads.messages.create(
-            thread_id=user_state["thread_id"],
-            role="user",
-            content=user_message
-        )
-
         # Crear y manejar la respuesta del asistente
-        event_handler = EventHandler()
+        event_handler = EventHandler(user_id)
         with client.beta.threads.runs.stream(
-            thread_id=user_state["thread_id"],
+            thread_id=f"user_thread_{user_id}",
             assistant_id=assistant_id,
+            user_message={"role": "user", "content": user_message},
             event_handler=event_handler,
         ) as stream:
             stream.until_done()
 
-        # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
 
-        if "listo" in user_message.lower():  # El usuario indica que terminó
-            logger.info(f"El usuario {user_id} finalizó la interacción, comenzando búsqueda...")
-
-            # Realizar la búsqueda con los parámetros predefinidos
+        # Verificar si se debe realizar la búsqueda
+        if user_state[user_id]["ready_for_search"]:
             search_results = fetch_search_results()
             if not search_results:
                 return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
 
-            # Formatear los resultados
-            response_message = "\nAquí están los resultados de la búsqueda:" 
+            response_message = "\nAquí están los resultados de la búsqueda:"
             for property in search_results.get('properties', []):
                 property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
                                    f"- **Ubicación:** {property.get('location')}\n" \
@@ -144,14 +143,13 @@ def generate_response():
                                    f"- **Detalles:** {property.get('details')}\n" \
                                    f"[Ver más detalles]({property.get('url')})"
                 response_message += property_message
-                time.sleep(1)  # Esperar un segundo entre mensajes (opcional)
+                time.sleep(1)
 
-            # Limpiar datos del usuario después de la búsqueda
-            del user_threads[user_id]
+            # Limpiar el estado del usuario
+            user_state.pop(user_id, None)
 
             return jsonify({'response': assistant_message + response_message})
 
-        # Continuar recopilando información
         return jsonify({'response': assistant_message})
 
     except Exception as e:
