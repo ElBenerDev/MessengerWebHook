@@ -91,7 +91,6 @@ property_types_info = {
 }
 
 # Parámetros de búsqueda iniciales
-# Parámetros de búsqueda iniciales
 search_params = {
     "operation_types": [1],  # Solo Renta por defecto
     "property_types": [2],    # Solo Departamento por defecto
