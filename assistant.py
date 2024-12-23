@@ -91,13 +91,17 @@ property_types_info = {
 }
 
 # Parámetros de búsqueda iniciales
+# Parámetros de búsqueda iniciales
 search_params = {
-    "operation_types": [1],  # Solo Renta
-    "property_types": [2],    # Solo Departamento
+    "operation_types": [1],  # Solo Renta por defecto
+    "property_types": [2],    # Solo Departamento por defecto
     "price_from": 0,
     "price_to": 5000000,
     "currency": "ARS"
 }
+
+# Estado de la conversación
+user_states = {}
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -110,87 +114,67 @@ def generate_response():
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
-    try:
-        # Verificar si ya existe un thread_id para este usuario
-        if user_id not in user_threads:
-            thread = client.beta.threads.create()
-            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
-            user_threads[user_id] = thread.id
+    # Inicializar el estado del usuario si no existe
+    if user_id not in user_states:
+        user_states[user_id] = {
+            "search_params": search_params.copy(),
+            "step": 0  # Controla el paso de la conversación
+        }
+
+    user_state = user_states[user_id]
+
+    # Lógica de conversación
+    if user_state["step"] == 0:
+        # Preguntar por el tipo de operación
+        response_message = "¿Estás buscando una **renta** o una **venta**? Responde con 'renta' o 'venta'."
+        user_state["step"] = 1
+
+    elif user_state["step"] == 1:
+        # Procesar la respuesta sobre el tipo de operación
+        if "renta" in user_message.lower():
+            user_state["search_params"]["operation_types"] = [1]  # Renta
+            response_message = "Perfecto, ¿qué tipo de propiedad estás buscando? (casa, departamento, etc.)"
+            user_state["step"] = 2
+        elif "venta" in user_message.lower():
+            user_state["search_params"]["operation_types"] = [2]  # Venta
+            response_message = "Perfecto, ¿qué tipo de propiedad estás buscando? (casa, departamento, etc.)"
+            user_state["step"] = 2
         else:
-            thread_id = user_threads[user_id]
+            response_message = "Por favor, responde con 'renta' o 'venta'."
 
-        # Enviar el mensaje del usuario al hilo existente
-        client.beta.threads.messages.create(
-            thread_id=user_threads[user_id],
-            role="user",
-            content=user_message
-        )
+    elif user_state["step"] == 2:
+        # Procesar la respuesta sobre el tipo de propiedad
+        property_type = user_message.lower()
+        if property_type == "casa":
+            user_state["search_params"]["property_types"] = [1]  # Casa
+        elif property_type == "departamento":
+            user_state["search_params"]["property_types"] = [2]  # Departamento
+        else:
+            response_message = "No reconozco ese tipo de propiedad. ¿Buscas una casa o un departamento?"
+            return jsonify({'response': response_message})
 
-        # Crear y manejar la respuesta del asistente
-        event_handler = EventHandler()
-        with client.beta.threads.runs.stream(
-            thread_id=user_threads[user_id],
-            assistant_id=assistant_id,
-            event_handler=event_handler,
-        ) as stream:
-            stream.until_done()
+        response_message = "¿Cuál es tu rango de precios? Por favor, indícame el precio mínimo y máximo (ejemplo: 1000000-5000000)."
+        user_state["step"] = 3
 
-        # Obtener el mensaje generado por el asistente
-        assistant_message = event_handler.assistant_message
-        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+    elif user_state["step"] == 3:
+        # Procesar el rango de precios
+        try:
+            price_from, price_to = map(int, user_message.split('-'))
+            user_state["search_params"]["price_from"] = price_from
+            user_state["search_params"]["price_to"] = price_to
+            response_message = "Gracias por la información. Ahora procederé a buscar propiedades."
+            user_state["step"] = 4
+        except ValueError:
+            response_message = "Por favor, proporciona un rango de precios válido en el formato: mínimo-máximo."
 
-        # Procesar comandos del usuario para modificar parámetros
-        if "cambiar operación" in user_message.lower():
-            # Ejemplo: cambiar operación a "venta"
-            search_params["operation_types"] = [2]  # Cambiar a venta
-            assistant_message += "\nHe cambiado la operación a 'venta'."
-
-        if "cambiar tipo de propiedad" in user_message.lower():
-            # Ejemplo: cambiar tipo de propiedad a "casa"
-            search_params["property_types"] = [1]  # Cambiar a casa
-            assistant_message += "\nHe cambiado el tipo de propiedad a 'casa'."
-
-        if "rango de precios" in user_message.lower():
-            # Ejemplo: establecer un nuevo rango de precios
-            new_price_from = 1000000  # Ejemplo de nuevo precio mínimo
-            new_price_to = 3000000     # Ejemplo de nuevo precio máximo
-            search_params["price_from"] = new_price_from
-            search_params["price_to"] = new_price_to
-            assistant_message += f"\nHe cambiado el rango de precios a {new_price_from} - {new_price_to} ARS."
-
-        # Proporcionar información sobre los tipos de operación y propiedad
-        if "qué es" in user_message.lower():
-            if "renta" in user_message.lower():
-                assistant_message += "\nLa renta es un acuerdo donde se paga por el uso de una propiedad."
-            elif "venta" in user_message.lower():
-                assistant_message += "\nLa venta implica transferir la propiedad de un inmueble a cambio de un precio."
-            elif "casa" in user_message.lower():
-                assistant_message += "\nUna casa es una vivienda unifamiliar, generalmente con un jardín."
-            elif "departamento" in user_message.lower():
-                assistant_message += "\nUn departamento es una unidad de vivienda en un edificio."
-
-        # Obtener el tipo de cambio
-        exchange_rate = get_exchange_rate()
-        if not exchange_rate:
-            return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
-
-        # Convertir precios a ARS
-        price_from = int(search_params["price_from"] * exchange_rate)
-        price_to = int(search_params["price_to"] * exchange_rate)
-
-        # Actualizar parámetros de búsqueda
-        search_params["price_from"] = price_from
-        search_params["price_to"] = price_to
-
-        # Realizar la búsqueda con los parámetros seleccionados
-        logger.info("Realizando la búsqueda con los parámetros actualizados...")
-        search_results = fetch_search_results(search_params)
-
+    elif user_state["step"] == 4:
+        # Realizar la búsqueda
+        search_results = fetch_search_results(user_state["search_params"])
         if not search_results:
             return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
 
         # Enviar resultados uno por uno
-        response_message = "\nAquí están los resultados de la búsqueda:"
+        response_message = "Aquí están los resultados de la búsqueda:"
         for property in search_results.get('properties', []):
             property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
                                f"- **Ubicación:** {property.get('location')}\n" \
@@ -199,16 +183,12 @@ def generate_response():
                                f"- **Detalles:** {property.get('details')}\n" \
                                f"[Ver más detalles]({property.get('url')})"
             response_message += property_message
-            time.sleep(1)  # Esperar un segundo entre mensajes (opcional)
 
         # Limpiar datos del usuario después de la búsqueda
-        del user_threads[user_id]
+        del user_states[user_id]
 
-        return jsonify({'response': assistant_message + response_message})
-
-    except Exception as e:
-        logger.error(f"Error al generar respuesta: {str(e)}")
-        return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+    # Enviar la respuesta al usuario
+    return jsonify({'response': response_message})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
