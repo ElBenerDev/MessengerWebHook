@@ -76,29 +76,6 @@ def fetch_search_results(search_params):
         logger.exception("Error al conectarse a la API de búsqueda.")
         return None
 
-# Definición de operaciones y tipos de propiedades
-operations_info = {
-    1: "Renta",
-    2: "Venta"
-}
-
-property_types_info = {
-    1: "Casa",
-    2: "Departamento",
-    3: "Local Comercial",
-    4: "Terreno",
-    5: "Oficina"
-}
-
-# Parámetros de búsqueda iniciales
-search_params = {
-    "operation_types": [1],  # Solo Renta
-    "property_types": [2],    # Solo Departamento
-    "price_from": 0,
-    "price_to": 5000000,
-    "currency": "ARS"
-}
-
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
     data = request.json
@@ -113,6 +90,7 @@ def generate_response():
     try:
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
+            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
@@ -139,51 +117,30 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Procesar comandos del usuario para modificar parámetros
-        if "cambiar operación" in user_message.lower():
-            # Ejemplo: cambiar operación a "venta"
-            search_params["operation_types"] = [2]  # Cambiar a venta
-            assistant_message += "\nHe cambiado la operación a 'venta'."
-
-        if "cambiar tipo de propiedad" in user_message.lower():
-            # Ejemplo: cambiar tipo de propiedad a "casa"
-            search_params["property_types"] = [1]  # Cambiar a casa
-            assistant_message += "\nHe cambiado el tipo de propiedad a 'casa'."
-
-        if "rango de precios" in user_message.lower():
-            # Ejemplo: establecer un nuevo rango de precios
-            new_price_from = 1000000  # Ejemplo de nuevo precio mínimo
-            new_price_to = 3000000     # Ejemplo de nuevo precio máximo
-            search_params["price_from"] = new_price_from
-            search_params["price_to"] = new_price_to
-            assistant_message += f"\nHe cambiado el rango de precios a {new_price_from} - {new_price_to} ARS."
-
-        # Proporcionar información sobre los tipos de operación y propiedad
-        if "qué es" in user_message.lower():
-            if "renta" in user_message.lower():
-                assistant_message += "\nLa renta es un acuerdo donde se paga por el uso de una propiedad."
-            elif "venta" in user_message.lower():
-                assistant_message += "\nLa venta implica transferir la propiedad de un inmueble a cambio de un precio."
-            elif "casa" in user_message.lower():
-                assistant_message += "\nUna casa es una vivienda unifamiliar, generalmente con un jardín."
-            elif "departamento" in user_message.lower():
-                assistant_message += "\nUn departamento es una unidad de vivienda en un edificio."
+        # Ejecutar la búsqueda con parámetros predeterminados
+        operation_ids = [1]  # Solo Rent
+        property_ids = [2]   # Solo Apartment
 
         # Obtener el tipo de cambio
         exchange_rate = get_exchange_rate()
         if not exchange_rate:
             return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
 
-        # Convertir precios a ARS
-        price_from = int(search_params["price_from"] * exchange_rate)
-        price_to = int(search_params["price_to"] * exchange_rate)
+        # Rango de precios predeterminado (en USD convertido a ARS)
+        price_from = int(0 * exchange_rate)
+        price_to = int(5000000 * exchange_rate)
 
-        # Actualizar parámetros de búsqueda
-        search_params["price_from"] = price_from
-        search_params["price_to"] = price_to
+        # Construir los parámetros de búsqueda
+        search_params = {
+            "operation_types": operation_ids,
+            "property_types": property_ids,
+            "price_from": price_from,
+            "price_to": price_to,
+            "currency": "ARS"  # La búsqueda se realiza en ARS
+        }
 
         # Realizar la búsqueda con los parámetros seleccionados
-        logger.info("Realizando la búsqueda con los parámetros actualizados...")
+        logger.info("Realizando la búsqueda con los parámetros predeterminados...")
         search_results = fetch_search_results(search_params)
 
         if not search_results:
