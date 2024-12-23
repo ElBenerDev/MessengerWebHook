@@ -6,7 +6,6 @@ import os
 import logging
 import requests
 import json
-import time
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +21,7 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
 # Diccionario para almacenar el estado de cada usuario
 user_state = {}
+user_threads = {}
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
@@ -63,11 +63,13 @@ def get_exchange_rate():
 def fetch_search_results():
     endpoint = "https://www.tokkobroker.com/api/v1/property/search/"
     try:
-        # Parámetros predefinidos
+        # Obtener tipo de cambio
         exchange_rate = get_exchange_rate()
         if not exchange_rate:
+            logger.error("No se pudo obtener el tipo de cambio.")
             return None
 
+        # Parámetros de búsqueda
         operation_ids = [1]  # Solo Rent
         property_ids = [2]   # Solo Apartment
         price_from = int(0 * exchange_rate)
@@ -111,52 +113,43 @@ def generate_response():
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
-    # Inicializar el estado del usuario si no existe
-    if user_id not in user_state:
-        user_state[user_id] = {"ready_for_search": False}
-
     try:
-        # Crear y manejar la respuesta del asistente
+        # Verificar y crear estado para el usuario
+        if user_id not in user_state:
+            user_state[user_id] = {"ready_for_search": False}
+
+        # Verificar si ya existe un thread_id para este usuario
+        if user_id not in user_threads:
+            thread = client.beta.threads.create()
+            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
+            user_threads[user_id] = thread.id
+
+        # Enviar el mensaje del usuario al hilo existente
+        client.beta.threads.messages.create(
+            thread_id=user_threads[user_id],
+            role="user",
+            content=user_message
+        )
+
+        # Crear un manejador de eventos para la respuesta
         event_handler = EventHandler(user_id)
-        with client.beta.threads.runs.stream(
-            thread_id=f"user_thread_{user_id}",
+
+        # Ejecutar el stream de respuesta del asistente
+        client.beta.threads.runs.stream(
+            thread_id=user_threads[user_id],
             assistant_id=assistant_id,
-            messages=[
-                {"role": "user", "content": user_message}
-            ],
             event_handler=event_handler,
-        ) as stream:
-            stream.until_done()
+        )
 
+        # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
-
-        # Verificar si se debe realizar la búsqueda
-        if user_state[user_id]["ready_for_search"]:
-            search_results = fetch_search_results()
-            if not search_results:
-                return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
-
-            response_message = "\nAquí están los resultados de la búsqueda:"
-            for property in search_results.get('properties', []):
-                property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
-                                   f"- **Ubicación:** {property.get('location')}\n" \
-                                   f"- **Precio:** {property.get('price')} ARS\n" \
-                                   f"- **Habitaciones:** {property.get('rooms')}\n" \
-                                   f"- **Detalles:** {property.get('details')}\n" \
-                                   f"[Ver más detalles]({property.get('url')})"
-                response_message += property_message
-                time.sleep(1)
-
-            # Limpiar el estado del usuario
-            user_state.pop(user_id, None)
-
-            return jsonify({'response': assistant_message + response_message})
-
-        return jsonify({'response': assistant_message})
+        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+
+    return jsonify({'response': assistant_message})
 
 
 if __name__ == '__main__':
