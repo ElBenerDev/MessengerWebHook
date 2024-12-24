@@ -114,15 +114,13 @@ def generate_response():
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
-        # Verificar y crear estado para el usuario
-        if user_id not in user_state:
-            user_state[user_id] = {"ready_for_search": False}
-
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
+        else:
+            logger.info(f"Usando hilo existente para el usuario {user_id}: {user_threads[user_id]}")
 
         # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
@@ -131,30 +129,30 @@ def generate_response():
             content=user_message
         )
 
-        # Crear un manejador de eventos para la respuesta
-        event_handler = EventHandler(user_id)
-
-        # Ejecutar el stream de respuesta del asistente
-        client.beta.threads.runs.stream(
+        # Crear y manejar la respuesta del asistente
+        event_handler = EventHandler()
+        with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
             assistant_id=assistant_id,
             event_handler=event_handler,
-        )
+        ) as stream:
+            stream.until_done()
 
         # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Validar que el mensaje generado no esté vacío
+        # Validar si el mensaje está vacío
         if not assistant_message:
-            logger.warning("El asistente no generó una respuesta. Se enviará un mensaje predeterminado.")
-            assistant_message = "Lo siento, no puedo responder a tu mensaje en este momento."
+            logger.warning("El asistente no generó una respuesta válida.")
+            assistant_message = "Parece que no puedo responder en este momento. Por favor, intenta más tarde."
 
     except Exception as e:
-        logger.error(f"Error al generar respuesta: {str(e)}")
+        logger.error(f"Error al generar respuesta: {str(e)}", exc_info=True)
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
     return jsonify({'response': assistant_message})
+
 
 
 if __name__ == '__main__':
