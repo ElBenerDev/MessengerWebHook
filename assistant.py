@@ -127,7 +127,7 @@ def generate_response():
                 return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
 
             # Modificar el parámetro de búsqueda con el presupuesto del usuario
-            price_from = int(0 * exchange_rate)  # Puede ser 0 si no hay un límite inferior
+            price_from = 0  # El precio mínimo siempre es 0
             price_to = int(user_budget * exchange_rate)  # Usar el presupuesto proporcionado por el usuario
 
             # Construir los parámetros de búsqueda
@@ -165,7 +165,6 @@ def generate_response():
 
         # Si el presupuesto no ha sido proporcionado aún, el asistente pregunta
         else:
-            assistant_message += "\n¿Cuál es tu presupuesto máximo para la renta mensual en ARS?"
             return jsonify({'response': assistant_message})
 
     except Exception as e:
