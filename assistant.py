@@ -142,8 +142,13 @@ def generate_response():
         )
 
         # Obtener el mensaje generado por el asistente
-        assistant_message = event_handler.assistant_message
+        assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+
+        # Validar que el mensaje generado no esté vacío
+        if not assistant_message:
+            logger.warning("El asistente no generó una respuesta. Se enviará un mensaje predeterminado.")
+            assistant_message = "Lo siento, no puedo responder a tu mensaje en este momento."
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
