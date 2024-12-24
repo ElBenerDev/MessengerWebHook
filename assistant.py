@@ -35,10 +35,6 @@ class EventHandler(AssistantEventHandler):
         print(f"Asistente: {text.value}", end="", flush=True)
         self.assistant_message += text.value
 
-        # Verificar si el asistente terminó de preguntar
-        if "¿Cuál es tu presupuesto máximo?" in text.value:
-            user_state[self.user_id]["ready_for_search"] = True
-
     @override
     def on_text_delta(self, delta, snapshot):
         print(delta.value, end="", flush=True)
