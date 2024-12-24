@@ -117,7 +117,7 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Si el asistente ha preguntado por el presupuesto máximo, actualizar el parámetro
+        # Si el presupuesto ha sido proporcionado, ejecutar la búsqueda
         if 'presupuesto' in data:
             user_budget = data.get('presupuesto')
 
@@ -127,10 +127,10 @@ def generate_response():
                 return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
 
             # Modificar el parámetro de búsqueda con el presupuesto del usuario
-            price_from = 0  # El precio mínimo siempre es 0
-            price_to = int(user_budget * exchange_rate)  # Usar el presupuesto proporcionado por el usuario
+            price_from = 0
+            price_to = int(user_budget * exchange_rate)
 
-            # Construir los parámetros de búsqueda
+            # Parámetros de búsqueda
             search_params = {
                 "operation_types": [1],  # Solo Rent
                 "property_types": [2],   # Solo Apartment
@@ -139,15 +139,17 @@ def generate_response():
                 "currency": "ARS"  # La búsqueda se realiza en ARS
             }
 
+            # Verificación de búsqueda
+            logger.info(f"Realizando búsqueda con parámetros: {search_params}")
+
             # Realizar la búsqueda con los parámetros seleccionados
-            logger.info("Realizando la búsqueda con el presupuesto proporcionado...")
             search_results = fetch_search_results(search_params)
 
             if not search_results:
-                return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
+                return jsonify({'response': "No se encontraron propiedades dentro de ese presupuesto."}), 500
 
-            # Enviar resultados uno por uno
-            response_message = "\nAquí están los resultados de la búsqueda con tu presupuesto máximo:"
+            # Mensaje de respuesta con los resultados encontrados
+            response_message = "Aquí tienes los resultados de la búsqueda con tu presupuesto máximo:"
             for property in search_results.get('properties', []):
                 property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
                                    f"- **Ubicación:** {property.get('location')}\n" \
@@ -161,6 +163,7 @@ def generate_response():
             # Limpiar datos del usuario después de la búsqueda
             del user_threads[user_id]
 
+            # Retornar el mensaje final junto con los resultados de búsqueda
             return jsonify({'response': assistant_message + response_message})
 
         # Si el presupuesto no ha sido proporcionado aún, el asistente pregunta
