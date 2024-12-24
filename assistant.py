@@ -117,51 +117,56 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Ejecutar la búsqueda con parámetros predeterminados
-        operation_ids = [1]  # Solo Rent
-        property_ids = [2]   # Solo Apartment
+        # Si el asistente ha preguntado por el presupuesto máximo, actualizar el parámetro
+        if 'presupuesto' in data:
+            user_budget = data.get('presupuesto')
 
-        # Obtener el tipo de cambio
-        exchange_rate = get_exchange_rate()
-        if not exchange_rate:
-            return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
+            # Obtener el tipo de cambio
+            exchange_rate = get_exchange_rate()
+            if not exchange_rate:
+                return jsonify({'response': "No se pudo obtener el tipo de cambio."}), 500
 
-        # Rango de precios predeterminado (en USD convertido a ARS)
-        price_from = int(0 * exchange_rate)
-        price_to = int(5000000 * exchange_rate)
+            # Modificar el parámetro de búsqueda con el presupuesto del usuario
+            price_from = int(0 * exchange_rate)  # Puede ser 0 si no hay un límite inferior
+            price_to = int(user_budget * exchange_rate)  # Usar el presupuesto proporcionado por el usuario
 
-        # Construir los parámetros de búsqueda
-        search_params = {
-            "operation_types": operation_ids,
-            "property_types": property_ids,
-            "price_from": price_from,
-            "price_to": price_to,
-            "currency": "ARS"  # La búsqueda se realiza en ARS
-        }
+            # Construir los parámetros de búsqueda
+            search_params = {
+                "operation_types": [1],  # Solo Rent
+                "property_types": [2],   # Solo Apartment
+                "price_from": price_from,
+                "price_to": price_to,
+                "currency": "ARS"  # La búsqueda se realiza en ARS
+            }
 
-        # Realizar la búsqueda con los parámetros seleccionados
-        logger.info("Realizando la búsqueda con los parámetros predeterminados...")
-        search_results = fetch_search_results(search_params)
+            # Realizar la búsqueda con los parámetros seleccionados
+            logger.info("Realizando la búsqueda con el presupuesto proporcionado...")
+            search_results = fetch_search_results(search_params)
 
-        if not search_results:
-            return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
+            if not search_results:
+                return jsonify({'response': "No se pudieron obtener resultados desde la API de búsqueda."}), 500
 
-        # Enviar resultados uno por uno
-        response_message = "\nAquí están los resultados de la búsqueda:"
-        for property in search_results.get('properties', []):
-            property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
-                               f"- **Ubicación:** {property.get('location')}\n" \
-                               f"- **Precio:** {property.get('price')} ARS\n" \
-                               f"- **Habitaciones:** {property.get('rooms')}\n" \
-                               f"- **Detalles:** {property.get('details')}\n" \
-                               f"[Ver más detalles]({property.get('url')})"
-            response_message += property_message
-            time.sleep(1)  # Esperar un segundo entre mensajes (opcional)
+            # Enviar resultados uno por uno
+            response_message = "\nAquí están los resultados de la búsqueda con tu presupuesto máximo:"
+            for property in search_results.get('properties', []):
+                property_message = f"\n- **Tipo de propiedad:** {property.get('property_type')}\n" \
+                                   f"- **Ubicación:** {property.get('location')}\n" \
+                                   f"- **Precio:** {property.get('price')} ARS\n" \
+                                   f"- **Habitaciones:** {property.get('rooms')}\n" \
+                                   f"- **Detalles:** {property.get('details')}\n" \
+                                   f"[Ver más detalles]({property.get('url')})"
+                response_message += property_message
+                time.sleep(1)  # Esperar un segundo entre mensajes (opcional)
 
-        # Limpiar datos del usuario después de la búsqueda
-        del user_threads[user_id]
+            # Limpiar datos del usuario después de la búsqueda
+            del user_threads[user_id]
 
-        return jsonify({'response': assistant_message + response_message})
+            return jsonify({'response': assistant_message + response_message})
+
+        # Si el presupuesto no ha sido proporcionado aún, el asistente pregunta
+        else:
+            assistant_message += "\n¿Cuál es tu presupuesto máximo para la renta mensual en ARS?"
+            return jsonify({'response': assistant_message})
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
