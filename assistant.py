@@ -4,8 +4,6 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import os
 import logging
-import requests
-import json
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -19,16 +17,15 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # ID del asistente
 assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
-# Diccionario para almacenar el estado de cada usuario
-user_state = {}
+# Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
-    def __init__(self, user_id):
+    def __init__(self, user_id):  # Agregado el parámetro user_id
         super().__init__()
         self.assistant_message = ""
-        self.user_id = user_id
+        self.user_id = user_id  # Guardar el user_id
 
     @override
     def on_text_created(self, text) -> None:
@@ -39,64 +36,6 @@ class EventHandler(AssistantEventHandler):
     def on_text_delta(self, delta, snapshot):
         print(delta.value, end="", flush=True)
         self.assistant_message += delta.value
-
-# Función para obtener el tipo de cambio
-def get_exchange_rate():
-    EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/USD"
-    try:
-        response = requests.get(EXCHANGE_RATE_API_URL)
-        if response.status_code == 200:
-            data = response.json()
-            return data["rates"]["ARS"]
-        else:
-            logger.error(f"Error al obtener el tipo de cambio. Código de estado: {response.status_code}")
-            return None
-    except Exception as e:
-        logger.exception("Error al conectarse a la API de tipo de cambio.")
-        return None
-
-# Función para realizar la búsqueda de propiedades
-def fetch_search_results():
-    endpoint = "https://www.tokkobroker.com/api/v1/property/search/"
-    try:
-        # Obtener tipo de cambio
-        exchange_rate = get_exchange_rate()
-        if not exchange_rate:
-            logger.error("No se pudo obtener el tipo de cambio.")
-            return None
-
-        # Parámetros de búsqueda
-        operation_ids = [1]  # Solo Rent
-        property_ids = [2]   # Solo Apartment
-        price_from = int(0 * exchange_rate)
-        price_to = int(5000000 * exchange_rate)
-
-        search_params = {
-            "operation_types": operation_ids,
-            "property_types": property_ids,
-            "price_from": price_from,
-            "price_to": price_to,
-            "currency": "ARS"
-        }
-
-        data_param = json.dumps(search_params, separators=(',', ':'))
-        params = {
-            "key": os.getenv("PROPERTY_API_KEY"),
-            "data": data_param,
-            "format": "json",
-            "limit": 20
-        }
-
-        response = requests.get(endpoint, params=params)
-        logger.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            logger.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
-            return None
-    except Exception as e:
-        logger.exception("Error al conectarse a la API de búsqueda.")
-        return None
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -112,6 +51,7 @@ def generate_response():
     try:
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
+            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
@@ -126,7 +66,7 @@ def generate_response():
         )
 
         # Crear y manejar la respuesta del asistente
-        event_handler = EventHandler()
+        event_handler = EventHandler(user_id)  # Instanciar con user_id
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
             assistant_id=assistant_id,
@@ -148,8 +88,6 @@ def generate_response():
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
     return jsonify({'response': assistant_message})
-
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
