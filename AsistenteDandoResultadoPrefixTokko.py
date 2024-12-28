@@ -1,3 +1,7 @@
+from flask import Flask, request, jsonify
+from openai import OpenAI
+from openai import AssistantEventHandler
+from typing_extensions import override
 import os
 import logging
 import requests
@@ -19,32 +23,58 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 # Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
 
-# ID del catálogo de Facebook
-CATALOG_ID = "618636270837934"
-
-# Función para obtener productos del catálogo
-def get_catalog_products():
-    url = f'https://graph.facebook.com/v12.0/{CATALOG_ID}/products'
-    params = {
-        'access_token': os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN")
-    }
-    response = requests.get(url, params=params)
-    if response.status_code == 200:
-        return response.json()['data']  # Retorna los productos
-    else:
-        logger.error("Error al obtener productos del catálogo.")
-        return []
-
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
-class EventHandler:
+class EventHandler(AssistantEventHandler):
     def __init__(self):
+        super().__init__()
         self.assistant_message = ""
 
+    @override
     def on_text_created(self, text) -> None:
-        self.assistant_message += text['value']
+        print(f"Asistente: {text.value}", end="", flush=True)
+        self.assistant_message += text.value
 
-    def on_text_delta(self, delta) -> None:
-        self.assistant_message += delta['value']
+    @override
+    def on_text_delta(self, delta, snapshot):
+        print(delta.value, end="", flush=True)
+        self.assistant_message += delta.value
+
+# Función para obtener el tipo de cambio
+def get_exchange_rate():
+    EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/USD"
+    try:
+        response = requests.get(EXCHANGE_RATE_API_URL)
+        if response.status_code == 200:
+            data = response.json()
+            return data["rates"]["ARS"]  # Tipo de cambio de USD a ARS
+        else:
+            logger.error(f"Error al obtener el tipo de cambio. Código de estado: {response.status_code}")
+            return None
+    except Exception as e:
+        logger.exception("Error al conectarse a la API de tipo de cambio.")
+        return None
+
+# Función para realizar la búsqueda de propiedades
+def fetch_search_results(search_params):
+    endpoint = "https://www.tokkobroker.com/api/v1/property/search/"
+    try:
+        data_param = json.dumps(search_params, separators=(',', ':'))  # Elimina espacios adicionales
+        params = {
+            "key": os.getenv("PROPERTY_API_KEY"),  # Asegúrate de tener esta clave en tus variables de entorno
+            "data": data_param,
+            "format": "json",
+            "limit": 20
+        }
+        response = requests.get(endpoint, params=params)
+        logger.info(f"Solicitud enviada a la API de búsqueda: {response.url}")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"Error al realizar la búsqueda. Código de estado: {response.status_code}")
+            return None
+    except Exception as e:
+        logger.exception("Error al conectarse a la API de búsqueda.")
+        return None
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -60,6 +90,7 @@ def generate_response():
     try:
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
+            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
@@ -73,12 +104,6 @@ def generate_response():
             content=user_message
         )
 
-        # Obtener productos del catálogo si es necesario
-        products = get_catalog_products()
-        catalog_info = ""
-        if products:
-            catalog_info = "\n".join([f"{p['name']}: {p['description']} - {p['price']} {p['currency']}" for p in products])
-
         # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
@@ -90,9 +115,6 @@ def generate_response():
 
         # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
-        if 'productos' in user_message.lower():
-            assistant_message += "\n\nAquí están los productos disponibles:\n" + catalog_info
-
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
         # Ejecutar la búsqueda con parámetros predeterminados
@@ -144,8 +166,6 @@ def generate_response():
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
-
-    return jsonify({'response': assistant_message})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
