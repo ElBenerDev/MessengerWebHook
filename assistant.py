@@ -34,19 +34,22 @@ def get_catalog_products():
     if response.status_code == 200:
         return response.json()['data']  # Retorna los productos
     else:
-        logger.error("Error al obtener productos del catálogo.")
+        logger.error("Error al obtener productos del catálogo. Respuesta: %s", response.text)
         return []
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
-class EventHandler:
+class EventHandler(AssistantEventHandler):
     def __init__(self):
+        super().__init__()
         self.assistant_message = ""
 
+    @override
     def on_text_created(self, text) -> None:
-        self.assistant_message += text['value']
+        self.assistant_message += text.value
 
-    def on_text_delta(self, delta) -> None:
-        self.assistant_message += delta['value']
+    @override
+    def on_text_delta(self, delta, snapshot):
+        self.assistant_message += delta.value
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
