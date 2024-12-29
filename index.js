@@ -1,15 +1,18 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import axios from 'axios';
+import { google } from 'googleapis';
+import { createEvent } from './calendar'; // Importar la función de crear eventos en Google Calendar
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
-const pythonServiceUrl = 'http://localhost:5000';
+const pythonServiceUrl = 'http://localhost:5000/generate-response';  // Asegúrate de que este es el servidor correcto
 
 app.use(express.json());
 
+// Función para enviar mensaje a WhatsApp
 async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
@@ -20,7 +23,6 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
 
     const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
 
-    // Validar que el mensaje sea un string
     if (typeof message !== 'string') {
         console.warn("El mensaje no es un string. Intentando convertirlo...");
         message = String(message || ""); // Convertir a string o usar un mensaje vacío
@@ -40,12 +42,12 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
             },
         });
         console.log(`Mensaje enviado a ${recipientId}: ${message}`);
-        console.log("Respuesta de WhatsApp:", response.data);
     } catch (error) {
         console.error("Error al enviar mensaje a WhatsApp:", error.response?.data || error.message);
     }
 }
 
+// Webhook de WhatsApp para recibir mensajes
 app.post('/webhook', async (req, res) => {
     try {
         if (!req.body || !req.body.entry || !Array.isArray(req.body.entry)) {
@@ -74,8 +76,9 @@ app.post('/webhook', async (req, res) => {
 
                     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
 
+                    // Llamar al servidor Python para generar una respuesta
                     try {
-                        const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
+                        const response = await axios.post(pythonServiceUrl, {
                             message: receivedMessage,
                             sender_id: senderId
                         });
@@ -92,10 +95,6 @@ app.post('/webhook', async (req, res) => {
                             );
                         }
                     }
-                } else if (value && value.statuses) {
-                    continue;
-                } else {
-                    console.log("Mensaje no procesable:", JSON.stringify(value, null, 2));
                 }
             }
         }
@@ -107,6 +106,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// Verificación del webhook de WhatsApp
 app.get('/webhook', (req, res) => {
     const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
     const mode = req.query['hub.mode'];
@@ -126,6 +126,37 @@ app.get('/webhook', (req, res) => {
         res.sendStatus(400);
     }
 });
+
+// Crear evento en Google Calendar
+async function createEventInCalendar(start_time, end_time, summary) {
+    try {
+        await authenticateGoogle();
+
+        const calendar = google.calendar('v3');
+
+        const event = {
+            summary: summary,
+            start: {
+                dateTime: start_time.toISOString(),
+                timeZone: 'America/New_York',
+            },
+            end: {
+                dateTime: end_time.toISOString(),
+                timeZone: 'America/New_York',
+            },
+        };
+
+        const response = await calendar.events.insert({
+            calendarId: 'primary', // O tu ID de calendario
+            resource: event,
+        });
+
+        return response.data.htmlLink;
+    } catch (error) {
+        console.error('Error al crear evento en Google Calendar:', error);
+        throw error;
+    }
+}
 
 app.listen(port, () => {
     console.log(`Servidor escuchando en puerto ${port}`);
