@@ -2,13 +2,12 @@ import dotenv from 'dotenv';
 import express from 'express';
 import axios from 'axios';
 import { google } from 'googleapis';
-import { createEvent } from './calendar'; // Importar la función de crear eventos en Google Calendar
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
-const pythonServiceUrl = 'http://localhost:5000/generate-response';  // Asegúrate de que este es el servidor correcto
+const pythonServiceUrl = 'http://localhost:5000';  // Asegúrate de que este es el servidor correcto
 
 app.use(express.json());
 
@@ -130,9 +129,13 @@ app.get('/webhook', (req, res) => {
 // Crear evento en Google Calendar
 async function createEventInCalendar(start_time, end_time, summary) {
     try {
-        await authenticateGoogle();
+        // Autenticar con Google API
+        const auth = new google.auth.GoogleAuth({
+            keyFile: 'path/to/your/credentials.json', // Ruta al archivo de credenciales
+            scopes: ['https://www.googleapis.com/auth/calendar'],
+        });
 
-        const calendar = google.calendar('v3');
+        const calendar = google.calendar({ version: 'v3', auth });
 
         const event = {
             summary: summary,
@@ -157,6 +160,25 @@ async function createEventInCalendar(start_time, end_time, summary) {
         throw error;
     }
 }
+
+// Crear eventos en Google Calendar cuando el bot lo indique
+app.post('/create-events', async (req, res) => {
+    const { events, startTime } = req.body;
+    const startDateTime = new Date(startTime);
+
+    try {
+        for (const eventSummary of events) {
+            const endTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // Evento de 1 hora
+            await createEventInCalendar(startDateTime, endTime, eventSummary);
+            startDateTime.setDate(startDateTime.getDate() + 1); // Mover al siguiente día
+        }
+
+        res.send({ message: 'Eventos creados correctamente' });
+    } catch (error) {
+        console.error("Error al crear los eventos:", error);
+        res.status(500).send({ error: 'Hubo un error al crear los eventos.' });
+    }
+});
 
 app.listen(port, () => {
     console.log(`Servidor escuchando en puerto ${port}`);
