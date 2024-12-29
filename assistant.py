@@ -1,27 +1,26 @@
-import requests
-import os
-import tempfile
-import shutil
-from gtts import gTTS
 from flask import Flask, request, jsonify
 from openai import OpenAI
 from openai import AssistantEventHandler
 from typing_extensions import override
+import os
 import logging
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuración de la app Flask
 app = Flask(__name__)
 
-# Cliente OpenAI
+# Configura tu cliente con la API key desde el entorno
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# ID del asistente
 assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
+
+# Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
 
-# Evento para manejar respuestas de OpenAI
+# Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
         super().__init__()
@@ -29,65 +28,14 @@ class EventHandler(AssistantEventHandler):
 
     @override
     def on_text_created(self, text) -> None:
+        print(f"Asistente: {text.value}", end="", flush=True)
         self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
+        print(delta.value, end="", flush=True)
         self.assistant_message += delta.value
 
-# Función para convertir texto a audio
-def text_to_audio(text):
-    tts = gTTS(text)
-    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-    tts.save(tmp_file.name)
-    final_path = f"/tmp/{os.path.basename(tmp_file.name)}"
-    shutil.move(tmp_file.name, final_path)
-    return final_path
-
-# Función para subir el archivo de audio a WhatsApp y obtener el media_id
-def upload_audio_to_whatsapp(audio_file_path):
-    url = f'https://graph.facebook.com/v21.0/{os.getenv("PHONE_NUMBER_ID")}/media'
-    headers = {
-        'Authorization': f'Bearer {os.getenv("ACCESS_TOKEN")}',
-    }
-    files = {
-        'file': open(audio_file_path, 'rb'),
-        'type': 'audio/mp3',
-        'messaging_product': 'whatsapp'
-    }
-    
-    response = requests.post(url, headers=headers, files=files)
-    files['file'].close()
-    
-    if response.status_code == 200:
-        media_id = response.json().get('id')
-        return media_id
-    else:
-        logger.error(f"Error al subir archivo: {response.json()}")
-        return None
-
-# Función para enviar el mensaje con el archivo de audio a WhatsApp
-def send_audio_message_to_whatsapp(media_id, recipient_id, text_message="Aquí está tu mensaje de audio"):
-    url = f'https://graph.facebook.com/v14.0/{os.getenv("PHONE_NUMBER_ID")}/messages'
-    headers = {
-        'Authorization': f'Bearer {os.getenv("ACCESS_TOKEN")}',
-        'Content-Type': 'application/json'
-    }
-    data = {
-        'messaging_product': 'whatsapp',
-        'to': recipient_id,
-        'text': text_message,  # Añadir texto al mensaje de audio
-        'type': 'audio',
-        'audio': {'id': media_id}
-    }
-    
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 200:
-        logger.info("Mensaje de audio enviado correctamente")
-    else:
-        logger.error(f"Error al enviar mensaje: {response.json()}")
-
-# Ruta para generar respuesta y mandar audio
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
     data = request.json
@@ -97,20 +45,26 @@ def generate_response():
     if not user_message or not user_id:
         return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
 
-    try:
-        # Si es el primer mensaje del usuario, crear un thread
-        if user_id not in user_threads:
-            thread = client.beta.threads.create()
-            user_threads[user_id] = thread.id
+    logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
-        # Enviar el mensaje del usuario al modelo OpenAI
+    try:
+        # Verificar si ya existe un thread_id para este usuario
+        if user_id not in user_threads:
+            # Crear un nuevo hilo de conversación si no existe
+            thread = client.beta.threads.create()
+            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
+            user_threads[user_id] = thread.id
+        else:
+            thread_id = user_threads[user_id]
+
+        # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
             role="user",
             content=user_message
         )
 
-        # Iniciar el evento y generar la respuesta
+        # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
@@ -119,21 +73,15 @@ def generate_response():
         ) as stream:
             stream.until_done()
 
+        # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
-        audio_file = text_to_audio(assistant_message)  # Convertir respuesta a audio
-
-        # Subir el audio a WhatsApp y obtener el media_id
-        media_id = upload_audio_to_whatsapp(audio_file)
-        
-        if media_id:
-            # Enviar el mensaje de audio a WhatsApp
-            send_audio_message_to_whatsapp(media_id, user_id, text_message=assistant_message)
-            return jsonify({'response': assistant_message, 'audio_sent': True})
-        else:
-            return jsonify({'response': assistant_message, 'audio_sent': False})
+        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
     except Exception as e:
+        logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+
+    return jsonify({'response': assistant_message})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
