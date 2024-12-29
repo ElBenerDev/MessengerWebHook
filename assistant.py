@@ -30,6 +30,7 @@ class EventHandler(AssistantEventHandler):
     def on_text_delta(self, delta, snapshot):
         self.assistant_message += delta.value
 
+# Función para convertir el texto a audio
 def text_to_audio(text):
     tts = gTTS(text)
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
@@ -67,9 +68,9 @@ def generate_response():
             stream.until_done()
 
         assistant_message = event_handler.assistant_message
-        audio_file = text_to_audio(assistant_message)
+        audio_file = text_to_audio(assistant_message)  # Convertir a audio
 
-        return jsonify({'response': assistant_message, 'audio_file': f"{audio_file}"})
+        return jsonify({'response': assistant_message, 'audio_file': audio_file})
 
     except Exception as e:
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500

@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import axios from 'axios';
+import fs from 'fs';
+import FormData from 'form-data';
 
 dotenv.config();
 
@@ -10,42 +12,56 @@ const pythonServiceUrl = 'http://localhost:5000';
 
 app.use(express.json());
 
-async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
+// Función para subir el archivo de audio a WhatsApp
+async function uploadAudioToWhatsApp(audioFilePath, phoneNumberId) {
     const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
-    if (!WHATSAPP_ACCESS_TOKEN) {
-        console.error("FACEBOOK_PAGE_ACCESS_TOKEN no está configurado en las variables de entorno.");
-        return;
-    }
+    const formData = new FormData();
+    formData.append("file", fs.createReadStream(audioFilePath));  // Archivo de audio
+    formData.append("messaging_product", "whatsapp");
 
-    const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
+    try {
+        const response = await axios.post(`https://graph.facebook.com/v12.0/${phoneNumberId}/media`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+                'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            },
+        });
 
-    // Validar que el mensaje sea un string
-    if (typeof message !== 'string') {
-        console.warn("El mensaje no es un string. Intentando convertirlo...");
-        message = String(message || ""); // Convertir a string o usar un mensaje vacío
+        return response.data.id;  // Retorna el ID del archivo subido
+    } catch (error) {
+        console.error("Error al subir el archivo de audio a WhatsApp:", error.response?.data || error.message);
+        return null;
     }
+}
+
+// Función para enviar el mensaje de audio a WhatsApp
+async function sendAudioMessageToWhatsApp(recipientId, audioFileId, phoneNumberId) {
+    const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
     const payload = {
         messaging_product: "whatsapp",
         to: recipientId,
-        text: { body: message },
+        audio: {
+            id: audioFileId,
+        },
     };
 
     try {
-        const response = await axios.post(url, payload, {
+        const response = await axios.post(`https://graph.facebook.com/v12.0/${phoneNumberId}/messages`, payload, {
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
             },
         });
-        console.log(`Mensaje enviado a ${recipientId}: ${message}`);
+        console.log(`Mensaje de audio enviado a ${recipientId}`);
         console.log("Respuesta de WhatsApp:", response.data);
     } catch (error) {
-        console.error("Error al enviar mensaje a WhatsApp:", error.response?.data || error.message);
+        console.error("Error al enviar mensaje de audio a WhatsApp:", error.response?.data || error.message);
     }
 }
 
+// Endpoint para manejar el webhook
 app.post('/webhook', async (req, res) => {
     try {
         if (!req.body || !req.body.entry || !Array.isArray(req.body.entry)) {
@@ -81,19 +97,25 @@ app.post('/webhook', async (req, res) => {
                         });
 
                         const assistantMessage = response.data.response;
-                        await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
+                        const audioFilePath = response.data.audio_file;  // Ruta del archivo de audio generado
+
+                        // Subir el archivo de audio a WhatsApp
+                        const audioFileId = await uploadAudioToWhatsApp(audioFilePath, phoneNumberId);
+                        if (audioFileId) {
+                            await sendAudioMessageToWhatsApp(senderId, audioFileId, phoneNumberId);
+                        } else {
+                            await sendAudioMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
+                        }
                     } catch (error) {
                         console.error("Error al interactuar con el servicio Python:", error.message);
                         if (senderId && phoneNumberId) {
-                            await sendMessageToWhatsApp(
+                            await sendAudioMessageToWhatsApp(
                                 senderId,
                                 "Lo siento, hubo un problema al procesar tu mensaje.",
                                 phoneNumberId
                             );
                         }
                     }
-                } else if (value && value.statuses) {
-                    continue;
                 } else {
                     console.log("Mensaje no procesable:", JSON.stringify(value, null, 2));
                 }
@@ -107,6 +129,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// Endpoint de verificación del webhook
 app.get('/webhook', (req, res) => {
     const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
     const mode = req.query['hub.mode'];
