@@ -62,12 +62,12 @@ class EventHandler(AssistantEventHandler):
 
     @override
     def on_text_created(self, text) -> None:
-        print(f"Asistente: {text.value}", end="", flush=True)
+        logger.info(f"Asistente: {text.value}")
         self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
-        print(delta.value, end="", flush=True)
+        logger.info(f"Delta: {delta.value}")
         self.assistant_message += delta.value
 
 # Endpoint para crear eventos desde un mensaje
