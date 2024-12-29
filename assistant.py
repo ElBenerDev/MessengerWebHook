@@ -1,7 +1,11 @@
 from flask import Flask, request, jsonify
 from openai import OpenAI
 from openai import AssistantEventHandler
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from datetime import datetime, timedelta
 from typing_extensions import override
+import pytz
 import os
 import logging
 
@@ -19,6 +23,29 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 
 # Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
+
+# Parámetros de Google Calendar
+SCOPES = ['https://www.googleapis.com/auth/calendar']
+SERVICE_ACCOUNT_FILE = 'path/to/your/credentials.json'
+CALENDAR_ID = 'your.calendar.id@domain.com'
+
+# Función para crear eventos en Google Calendar
+def create_event(start_time, end_time, summary):
+    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    service = build('calendar', 'v3', credentials=credentials)
+    event = {
+        'summary': summary,
+        'start': {
+            'dateTime': start_time.isoformat(),
+            'timeZone': 'America/New_York',
+        },
+        'end': {
+            'dateTime': end_time.isoformat(),
+            'timeZone': 'America/New_York',
+        },
+    }
+    event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+    logger.info('Evento creado: %s' % (event.get('htmlLink')))
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
@@ -76,6 +103,15 @@ def generate_response():
         # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+
+        # Verificar si el mensaje contiene información para crear un evento
+        if "evento" in assistant_message.lower():
+            # Asumimos que el asistente ya ha proporcionado la información necesaria para crear el evento
+            start_time = datetime.now()
+            start_time = pytz.timezone('America/New_York').localize(start_time)
+
+            # Crear un evento basado en la respuesta del asistente
+            create_event(start_time, start_time + timedelta(hours=1), assistant_message)
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
