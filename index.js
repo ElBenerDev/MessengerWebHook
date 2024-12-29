@@ -4,7 +4,7 @@ const fs = require('fs');
 const FormData = require('form-data');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 const pythonServiceUrl = 'http://localhost:5000'; // Asegúrate de que este sea el URL correcto
 
 app.use(express.json());
