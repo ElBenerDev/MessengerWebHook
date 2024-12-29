@@ -1,7 +1,7 @@
-const express = require('express');
-const axios = require('axios');
-const fs = require('fs');
-const FormData = require('form-data');
+import express from 'express';
+import axios from 'axios';
+import fs from 'fs';
+import FormData from 'form-data';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
