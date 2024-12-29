@@ -136,6 +136,7 @@ def generate_response():
     user_id = data.get('sender_id')
 
     if not user_message or not user_id:
+        # Devuelve una respuesta adecuada si falta un mensaje o ID de usuario
         return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
@@ -173,8 +174,6 @@ def generate_response():
         # Verificar si el asistente ha confirmado que creará la cita
         if "Voy a proceder a crearla" in assistant_message:
             # Extraer los detalles del evento desde el mensaje del asistente
-            # Suponemos que el asistente devuelve la información de la cita correctamente
-            # Por ejemplo, extraeremos el título y la hora de la cita
             event_details = {
                 "title": "Cita de prueba",  # Puede ser extraído del mensaje si se especifica
                 "start_time": datetime(2024, 12, 5, 16, 0),  # Hora de inicio
@@ -190,8 +189,12 @@ def generate_response():
             # Devolver la respuesta al usuario
             return jsonify({'response': f"Evento creado con éxito. Enlace al evento: {event_link}"}), 200
 
+        # Si no se tiene confirmación, devolver un mensaje por defecto
+        return jsonify({'response': "Lo siento, no pude procesar la solicitud correctamente."}), 400
+
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
+        # Manejar la excepción y devolver una respuesta de error
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
 
