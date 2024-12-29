@@ -136,7 +136,6 @@ def generate_response():
     user_id = data.get('sender_id')
 
     if not user_message or not user_id:
-        # Devuelve una respuesta adecuada si falta un mensaje o ID de usuario
         return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
@@ -171,23 +170,27 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Verificar si el asistente ha confirmado que creará la cita
+        # Verificar si el mensaje generado contiene un evento
         if "Voy a proceder a crearla" in assistant_message:
-            # Extraer los detalles del evento desde el mensaje del asistente
-            event_details = {
-                "title": "Cita de prueba",  # Puede ser extraído del mensaje si se especifica
-                "start_time": datetime(2024, 12, 5, 16, 0),  # Hora de inicio
-                "duration": timedelta(hours=2),  # Duración de 2 horas
-                "reminder": None,  # Sin recordatorio
-            }
+            try:
+                # Extraer los detalles del evento desde el mensaje del asistente
+                event_details = {
+                    "title": "Cita de prueba",  # Puede ser extraído del mensaje si se especifica
+                    "start_time": datetime(2024, 12, 5, 16, 0),  # Hora de inicio
+                    "duration": timedelta(hours=2),  # Duración de 2 horas
+                    "reminder": None,  # Sin recordatorio
+                }
 
-            # Crear el evento en Google Calendar
-            event_link = create_event(event_details["start_time"], 
-                                      event_details["start_time"] + event_details["duration"], 
-                                      event_details["title"])
+                # Crear el evento en Google Calendar
+                event_link = create_event(event_details["start_time"], 
+                                          event_details["start_time"] + event_details["duration"], 
+                                          event_details["title"])
 
-            # Devolver la respuesta al usuario
-            return jsonify({'response': f"Evento creado con éxito. Enlace al evento: {event_link}"}), 200
+                # Devolver la respuesta al usuario
+                return jsonify({'response': f"Evento creado con éxito. Enlace al evento: {event_link}"}), 200
+            except Exception as e:
+                logger.error(f"Error al crear el evento: {str(e)}")
+                return jsonify({'response': f"Error al crear el evento: {str(e)}"}), 500
 
         # Si no se tiene confirmación, devolver un mensaje por defecto
         return jsonify({'response': "Lo siento, no pude procesar la solicitud correctamente."}), 400
@@ -196,6 +199,7 @@ def generate_response():
         logger.error(f"Error al generar respuesta: {str(e)}")
         # Manejar la excepción y devolver una respuesta de error
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+
 
 
 if __name__ == '__main__':
