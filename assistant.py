@@ -91,17 +91,24 @@ def extract_datetime(message):
 
         # Convertir la hora a 24 horas si es AM/PM
         if time_match.group(3):
-            if time_match.group(3).lower() == "pm" and hour != 12:
-                hour += 12
-            elif time_match.group(3).lower() == "am" and hour == 12:
-                hour = 0
+            if time_match.group(3).lower() == "pm":
+                if hour != 12:
+                    hour += 12  # Convierte PM a formato de 24 horas (excepto 12 PM)
+            elif time_match.group(3).lower() == "am":
+                if hour == 12:
+                    hour = 0  # Convierte 12 AM a 00:00 (medianoche)
+
+        # Verificar si la hora está en el rango válido
+        if hour < 0 or hour > 23:
+            print(f"Hora inválida: {hour}")
+            return None
 
         # Crear un objeto datetime con la fecha y hora extraída
         event_date = datetime(year, months[month_name], day, hour, minute, tzinfo=pytz.timezone('America/New_York'))
         return event_date
     else:
-        logger.error(f"Mensaje recibido: {message}")
-        logger.error("No se pudo extraer la fecha y hora con las expresiones regulares.")
+        print(f"Mensaje recibido: {message}")
+        print("No se pudo extraer la fecha y hora con las expresiones regulares.")
         return None
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
