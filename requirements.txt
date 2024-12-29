@@ -5,3 +5,7 @@ typing-extensions
 pandas
 gTTS
 httpx  # Para realizar solicitudes HTTP de manera asíncrona en el backend Flask
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
