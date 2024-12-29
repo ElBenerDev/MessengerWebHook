@@ -26,8 +26,8 @@ user_threads = {}
 
 # Parámetros de Google Calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-SERVICE_ACCOUNT_FILE = 'path/to/your/credentials.json'
-CALENDAR_ID = 'your.calendar.id@domain.com'
+SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
+CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
 # Función para crear eventos en Google Calendar
 def create_event(start_time, end_time, summary):
