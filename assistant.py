@@ -26,7 +26,7 @@ user_threads = {}
 
 # Parámetros de Google Calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
+SERVICE_ACCOUNT_FILE = os.getenv('/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json')
 CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
 # Función para crear eventos en Google Calendar
