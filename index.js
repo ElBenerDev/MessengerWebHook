@@ -6,7 +6,7 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
-const pythonServiceUrl = 'http://localhost:5000';
+const pythonServiceUrl = 'http://localhost:5000';  // Asegúrate de que el servicio Python esté corriendo en el puerto 5000
 
 app.use(express.json());
 
@@ -91,10 +91,6 @@ app.post('/webhook', async (req, res) => {
                             );
                         }
                     }
-                } else if (value && value.statuses) {
-                    continue;
-                } else {
-                    console.log("Mensaje no procesable:", JSON.stringify(value, null, 2));
                 }
             }
         }

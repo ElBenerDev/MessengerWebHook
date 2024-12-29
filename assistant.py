@@ -1,4 +1,3 @@
-# main.py
 from flask import Flask, request, jsonify
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -7,14 +6,14 @@ import openai
 import pytz
 import os
 import logging
+from dotenv import load_dotenv
+
+# Cargar variables desde .env
+load_dotenv()
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Cargar variables desde .env
-from dotenv import load_dotenv
-load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
@@ -52,10 +51,8 @@ def generate_openai_response(prompt):
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Eres un asistente útil."},
-                {"role": "user", "content": prompt},
-            ],
+            messages=[{"role": "system", "content": "Eres un asistente útil."},
+                      {"role": "user", "content": prompt}],
             temperature=0.7,
         )
         return response['choices'][0]['message']['content']
