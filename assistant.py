@@ -170,11 +170,30 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
+        # Verificar si el asistente ha confirmado que creará la cita
+        if "Voy a proceder a crearla" in assistant_message:
+            # Extraer los detalles del evento desde el mensaje del asistente
+            # Suponemos que el asistente devuelve la información de la cita correctamente
+            # Por ejemplo, extraeremos el título y la hora de la cita
+            event_details = {
+                "title": "Cita de prueba",  # Puede ser extraído del mensaje si se especifica
+                "start_time": datetime(2024, 12, 5, 16, 0),  # Hora de inicio
+                "duration": timedelta(hours=2),  # Duración de 2 horas
+                "reminder": None,  # Sin recordatorio
+            }
+
+            # Crear el evento en Google Calendar
+            event_link = create_event(event_details["start_time"], 
+                                      event_details["start_time"] + event_details["duration"], 
+                                      event_details["title"])
+
+            # Devolver la respuesta al usuario
+            return jsonify({'response': f"Evento creado con éxito. Enlace al evento: {event_link}"}), 200
+
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
-    return jsonify({'response': assistant_message})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
