@@ -15,7 +15,7 @@ app = Flask(__name__)
 
 # Configuración de Google Calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-SERVICE_ACCOUNT_FILE = './asistenteCalendarioCredentials.json'
+SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
 CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
 # Configuración de OpenAI
