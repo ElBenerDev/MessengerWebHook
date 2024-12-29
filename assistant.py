@@ -4,10 +4,10 @@ from openai import AssistantEventHandler
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
-from typing_extensions import override
 import pytz
 import os
 import logging
+import re
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -53,15 +53,41 @@ class EventHandler(AssistantEventHandler):
         super().__init__()
         self.assistant_message = ""
 
-    @override
     def on_text_created(self, text) -> None:
         print(f"Asistente: {text.value}", end="", flush=True)
         self.assistant_message += text.value
 
-    @override
     def on_text_delta(self, delta, snapshot):
         print(delta.value, end="", flush=True)
         self.assistant_message += delta.value
+
+# Función para extraer la fecha y hora del mensaje
+def extract_datetime(message):
+    # Usaremos expresiones regulares para extraer la fecha y la hora del mensaje
+    date_pattern = r"\b(\d{1,2})\s*(de)?\s*(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s*(de)?\s*(\d{4})\b"
+    time_pattern = r"\b(\d{1,2}):(\d{2})\b"
+    
+    date_match = re.search(date_pattern, message, re.IGNORECASE)
+    time_match = re.search(time_pattern, message)
+
+    if date_match and time_match:
+        day = int(date_match.group(1))
+        month = date_match.group(3).lower()
+        year = int(date_match.group(5))
+        hour = int(time_match.group(1))
+        minute = int(time_match.group(2))
+
+        # Mapear el nombre del mes al número correspondiente
+        months = {
+            "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5,
+            "junio": 6, "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10,
+            "noviembre": 11, "diciembre": 12
+        }
+        
+        # Crear un objeto datetime con la fecha y hora extraída
+        event_date = datetime(year, months[month], day, hour, minute, tzinfo=pytz.timezone('America/New_York'))
+        return event_date
+    return None
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -106,12 +132,18 @@ def generate_response():
 
         # Verificar si el mensaje contiene información para crear un evento
         if "evento" in assistant_message.lower():
-            # Asumimos que el asistente ya ha proporcionado la información necesaria para crear el evento
-            start_time = datetime.now()
-            start_time = pytz.timezone('America/New_York').localize(start_time)
+            # Extraer la fecha y hora del mensaje del asistente
+            event_datetime = extract_datetime(assistant_message)
+            if event_datetime:
+                # Crear un evento basado en la respuesta del asistente
+                start_time = event_datetime
+                end_time = start_time + timedelta(hours=1)  # Duración de 1 hora para el evento
 
-            # Crear un evento basado en la respuesta del asistente
-            create_event(start_time, start_time + timedelta(hours=1), assistant_message)
+                # Crear el evento en Google Calendar
+                create_event(start_time, end_time, assistant_message)
+            else:
+                logger.error("No se pudo extraer la fecha y hora del mensaje.")
+                return jsonify({'response': "No pude encontrar una fecha y hora válidas para el evento."}), 400
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
