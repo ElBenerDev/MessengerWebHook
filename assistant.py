@@ -71,30 +71,33 @@ class EventHandler(AssistantEventHandler):
         self.assistant_message += delta.value
 
 # Endpoint para crear eventos desde un mensaje
-@app.route('/create-event', methods=['POST'])
-def create_event_endpoint():
+# Endpoint para generar respuestas del asistente
+@app.route('/generate-response', methods=['POST'])
+def generate_response():
     data = request.json
-    prompt = data.get('message')
+    user_message = data.get('message')
     user_id = data.get('sender_id')
 
-    if not prompt or not user_id:
-        return jsonify({'error': 'Faltan parámetros requeridos.'}), 400
+    if not user_message or not user_id:
+        return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
+
+    logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
-        # Usar el modelo de OpenAI para extraer eventos desde el mensaje
-        logger.info(f"Mensaje recibido del usuario {user_id}: {prompt}")
-        
-        # Crear un hilo de conversación para el usuario si no existe
+        # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
+            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
+        else:
+            thread_id = user_threads[user_id]
 
         # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
             role="user",
-            content=prompt
+            content=user_message
         )
 
         # Crear y manejar la respuesta del asistente
@@ -110,23 +113,37 @@ def create_event_endpoint():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Extraer eventos del mensaje generado por el asistente
-        events = assistant_message.strip().split(';')
+        # Verificar si el asistente ha confirmado que creará la cita
+        if "Voy a proceder a crearla" in assistant_message:
+            # Intentar crear el evento
+            try:
+                # Extraer los detalles del evento desde el mensaje del asistente
+                event_details = {
+                    "title": "Cita de prueba",  # Puede ser extraído del mensaje si se especifica
+                    "start_time": datetime(2024, 12, 5, 16, 0),  # Hora de inicio
+                    "duration": timedelta(hours=2),  # Duración de 2 horas
+                    "reminder": None,  # Sin recordatorio
+                }
 
-        start_time = datetime.now(pytz.timezone('America/New_York'))
-        event_links = []
+                # Crear el evento en Google Calendar
+                event_link = create_event(event_details["start_time"], 
+                                          event_details["start_time"] + event_details["duration"], 
+                                          event_details["title"])
 
-        for i, summary in enumerate(events):
-            end_time = start_time + timedelta(hours=1)
-            event_link = create_event(start_time, end_time, summary.strip())
-            event_links.append(event_link)
-            start_time += timedelta(days=1)  # Asumimos eventos consecutivos por días
+                # Devolver la respuesta al usuario
+                return jsonify({'response': f"Evento creado con éxito. Enlace al evento: {event_link}"}), 200
+            except Exception as e:
+                logger.error(f"Error al crear el evento: {str(e)}")
+                return jsonify({'response': f"Error al crear el evento: {str(e)}"}), 500
 
-        return jsonify({'status': 'success', 'event_links': event_links})
+        # Si no se tiene confirmación, devolver un mensaje por defecto
+        return jsonify({'response': "Lo siento, no pude procesar la solicitud correctamente."}), 400
 
     except Exception as e:
-        logger.error(f"Error al crear eventos: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        # Agregar más información al error para facilitar la depuración
+        logger.error(f"Error al generar respuesta: {str(e)}")
+        return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
+
 
 # Endpoint para generar respuestas del asistente
 @app.route('/generate-response', methods=['POST'])
