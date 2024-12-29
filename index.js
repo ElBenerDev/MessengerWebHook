@@ -3,6 +3,7 @@ import express from 'express';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
+import FormData from 'form-data'; // Asegúrate de importar el paquete 'form-data'
 
 dotenv.config();
 
@@ -56,9 +57,8 @@ async function sendAudioToWhatsApp(recipientId, audioFilePath, phoneNumberId) {
         return;
     }
 
-    // Subir el archivo de audio a WhatsApp
     const formData = new FormData();
-    formData.append('file', fs.createReadStream(audioFilePath));
+    formData.append('file', fs.createReadStream(audioFilePath)); // Aquí se agrega el archivo de audio
     formData.append('messaging_product', 'whatsapp');
     formData.append('to', recipientId);
 
