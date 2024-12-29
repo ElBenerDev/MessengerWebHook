@@ -5,12 +5,11 @@ import axios from 'axios';
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 8080; // Puerto donde corre Node.js
-const pythonServiceUrl = 'http://localhost:5000'; // URL del servicio Python
+const port = process.env.PORT || 8080;
+const pythonServiceUrl = 'http://localhost:5000';
 
 app.use(express.json());
 
-// Función para enviar mensajes a WhatsApp
 async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
@@ -20,6 +19,11 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     }
 
     const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
+
+    if (typeof message !== 'string') {
+        console.warn("El mensaje no es un string. Intentando convertirlo...");
+        message = String(message || ""); // Convertir a string o usar un mensaje vacío
+    }
 
     const payload = {
         messaging_product: "whatsapp",
@@ -41,7 +45,6 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     }
 }
 
-// Webhook para recibir mensajes
 app.post('/webhook', async (req, res) => {
     try {
         if (!req.body || !req.body.entry || !Array.isArray(req.body.entry)) {
@@ -50,6 +53,11 @@ app.post('/webhook', async (req, res) => {
         }
 
         for (const entry of req.body.entry) {
+            if (!entry.changes || !Array.isArray(entry.changes)) {
+                console.error("El campo 'changes' no está presente o no es un array:", JSON.stringify(entry, null, 2));
+                continue;
+            }
+
             for (const change of entry.changes) {
                 const value = change.value;
                 if (
@@ -75,12 +83,18 @@ app.post('/webhook', async (req, res) => {
                         await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
                     } catch (error) {
                         console.error("Error al interactuar con el servicio Python:", error.message);
-                        await sendMessageToWhatsApp(
-                            senderId,
-                            "Lo siento, hubo un problema al procesar tu mensaje.",
-                            phoneNumberId
-                        );
+                        if (senderId && phoneNumberId) {
+                            await sendMessageToWhatsApp(
+                                senderId,
+                                "Lo siento, hubo un problema al procesar tu mensaje.",
+                                phoneNumberId
+                            );
+                        }
                     }
+                } else if (value && value.statuses) {
+                    continue;
+                } else {
+                    console.log("Mensaje no procesable:", JSON.stringify(value, null, 2));
                 }
             }
         }
@@ -92,7 +106,6 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Webhook de verificación
 app.get('/webhook', (req, res) => {
     const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
     const mode = req.query['hub.mode'];
@@ -113,7 +126,6 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// Iniciar el servidor
 app.listen(port, () => {
     console.log(`Servidor escuchando en puerto ${port}`);
 });

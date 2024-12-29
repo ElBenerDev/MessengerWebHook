@@ -1,13 +1,13 @@
 from flask import Flask, request, jsonify
 import openai
 import os
+import traceback
 
 app = Flask(__name__)
 
 # Configuración de OpenAI
-openai.api_key = os.getenv('OPENAI_API_KEY')  # Clave de la API de OpenAI
+openai.api_key = os.getenv('OPENAI_API_KEY')  # Asegúrate de configurar esta variable en .env
 
-# Endpoint para generar respuestas del asistente
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
     data = request.json
@@ -32,7 +32,9 @@ def generate_response():
         return jsonify({'response': assistant_message}), 200
 
     except Exception as e:
+        print("Error al generar respuesta:", str(e))
+        traceback.print_exc()
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)  # Ejecutar en el puerto 5000
+    app.run(host='0.0.0.0', port=5000)
