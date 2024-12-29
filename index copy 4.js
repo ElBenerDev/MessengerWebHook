@@ -20,6 +20,7 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
 
     const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
 
+    // Validar que el mensaje sea un string
     if (typeof message !== 'string') {
         console.warn("El mensaje no es un string. Intentando convertirlo...");
         message = String(message || ""); // Convertir a string o usar un mensaje vacío
@@ -74,28 +75,13 @@ app.post('/webhook', async (req, res) => {
                     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
 
                     try {
-                        if (receivedMessage.toLowerCase().includes('evento')) {
-                            // Crear eventos en Google Calendar
-                            const eventResponse = await axios.post(`${pythonServiceUrl}/create-event`, {
-                                message: receivedMessage,
-                                sender_id: senderId,
-                            });
+                        const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
+                            message: receivedMessage,
+                            sender_id: senderId
+                        });
 
-                            const eventLinks = eventResponse.data.event_links || [];
-                            const reply = eventLinks.length
-                                ? `Eventos creados:\n${eventLinks.join('\n')}`
-                                : "No se pudieron crear eventos.";
-                            await sendMessageToWhatsApp(senderId, reply, phoneNumberId);
-                        } else {
-                            // Generar respuesta del asistente
-                            const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
-                                message: receivedMessage,
-                                sender_id: senderId,
-                            });
-
-                            const assistantMessage = response.data.response || "No se pudo generar una respuesta.";
-                            await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
-                        }
+                        const assistantMessage = response.data.response;
+                        await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
                     } catch (error) {
                         console.error("Error al interactuar con el servicio Python:", error.message);
                         if (senderId && phoneNumberId) {
