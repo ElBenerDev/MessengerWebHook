@@ -32,21 +32,30 @@ CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
 # Función para crear eventos en Google Calendar
 def create_event(start_time, end_time, summary):
-    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    service = build('calendar', 'v3', credentials=credentials)
-    event = {
-        'summary': summary,
-        'start': {
-            'dateTime': start_time.isoformat(),
-            'timeZone': 'America/New_York',
-        },
-        'end': {
-            'dateTime': end_time.isoformat(),
-            'timeZone': 'America/New_York',
-        },
-    }
-    event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-    logger.info('Evento creado: %s' % (event.get('htmlLink')))
+    try:
+        # Verifica que las credenciales y la conexión estén funcionando
+        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('calendar', 'v3', credentials=credentials)
+
+        event = {
+            'summary': summary,
+            'start': {
+                'dateTime': start_time.isoformat(),
+                'timeZone': 'America/New_York',  # Asegúrate de usar el timezone correcto
+            },
+            'end': {
+                'dateTime': end_time.isoformat(),
+                'timeZone': 'America/New_York',
+            },
+        }
+
+        # Crear el evento en Google Calendar
+        event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+        logger.info(f'Evento creado: {event.get("htmlLink")}')
+        return event
+    except Exception as e:
+        logger.error(f"Error al crear el evento: {str(e)}")
+        return None
 
 # Función para extraer fecha y hora del mensaje del usuario
 def extract_datetime(message):
@@ -111,28 +120,25 @@ def generate_response():
     user_id = data.get('sender_id')
 
     if not user_message or not user_id:
+        logger.error("No se proporcionó un mensaje o ID de usuario válido.")
         return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
 
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
-        # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
-            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
         else:
             thread_id = user_threads[user_id]
 
-        # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
             role="user",
             content=user_message
         )
 
-        # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
@@ -141,17 +147,16 @@ def generate_response():
         ) as stream:
             stream.until_done()
 
-        # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
         # Verificar si el mensaje contiene información para crear un evento
         if "evento" in assistant_message.lower():
-            # Intentar extraer la fecha y hora
             event_datetime = extract_datetime(assistant_message)
             if event_datetime:
-                # Crear un evento basado en la respuesta del asistente
-                create_event(event_datetime, event_datetime + timedelta(hours=1), assistant_message)
+                logger.info(f"Creando evento para la fecha y hora extraída: {event_datetime}")
+                # Crear evento en Google Calendar
+                create_event(event_datetime, event_datetime + timedelta(hours=1), "Cita Prueba")
             else:
                 logger.error("No se pudo extraer la fecha y hora del mensaje del asistente.")
                 return jsonify({'response': "No se pudo procesar la fecha y hora del evento."}), 400
