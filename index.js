@@ -8,7 +8,7 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
-const pythonServiceUrl = 'http://localhost:5000';
+const pythonServiceUrl = 'http://localhost:5000'; // URL de tu servicio Flask
 
 app.use(express.json());
 
@@ -47,7 +47,7 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
 }
 
 // Enviar audio a WhatsApp
-async function sendAudioToWhatsApp(recipientId, audioUrl, phoneNumberId) {
+async function sendAudioToWhatsApp(recipientId, audioFilePath, phoneNumberId) {
     const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
     const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
 
@@ -56,20 +56,20 @@ async function sendAudioToWhatsApp(recipientId, audioUrl, phoneNumberId) {
         return;
     }
 
-    const payload = {
-        messaging_product: "whatsapp",
-        to: recipientId,
-        audio: { link: audioUrl },
+    // Subir el archivo de audio a WhatsApp
+    const formData = new FormData();
+    formData.append('file', fs.createReadStream(audioFilePath));
+    formData.append('messaging_product', 'whatsapp');
+    formData.append('to', recipientId);
+
+    const headers = {
+        ...formData.getHeaders(),
+        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
     };
 
     try {
-        const response = await axios.post(url, payload, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-            },
-        });
-        console.log(`Audio enviado a ${recipientId}: ${audioUrl}`);
+        const response = await axios.post(url, formData, { headers });
+        console.log(`Audio enviado a ${recipientId}: ${audioFilePath}`);
     } catch (error) {
         console.error("Error al enviar audio a WhatsApp:", error.response?.data || error.message);
     }
@@ -137,6 +137,38 @@ app.get('/webhook', (req, res) => {
         res.sendStatus(400);
     }
 });
+
+// Función para manejar mensajes de texto y enviar la respuesta
+async function handleTextMessage(senderId, receivedMessage, phoneNumberId) {
+    try {
+        // Enviar el mensaje al servicio de Flask para generar la respuesta
+        const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
+            message: receivedMessage,
+            sender_id: senderId
+        });
+
+        const assistantMessage = response.data.response;
+        const audioFilePath = response.data.audio_file; // Ruta del archivo de audio generado
+
+        // Enviar el mensaje de texto
+        await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
+
+        // Enviar el archivo de audio (si se generó uno)
+        if (audioFilePath) {
+            await sendAudioToWhatsApp(senderId, audioFilePath, phoneNumberId);
+        }
+    } catch (error) {
+        console.error("Error al manejar el mensaje de texto:", error.message);
+    }
+}
+
+// Función para manejar mensajes de audio
+async function handleAudioMessage(senderId, audioUrl, phoneNumberId) {
+    console.log(`Procesando mensaje de audio recibido: ${audioUrl}`);
+    // Aquí puedes agregar la lógica para procesar el audio recibido si es necesario.
+    // Enviar una respuesta predeterminada por ahora
+    await sendMessageToWhatsApp(senderId, 'Recibí tu mensaje de audio, procesando...', phoneNumberId);
+}
 
 app.listen(port, () => {
     console.log(`Servidor escuchando en puerto ${port}`);
