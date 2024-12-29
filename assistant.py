@@ -27,7 +27,7 @@ user_threads = {}
 
 # Parámetros de Google Calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-SERVICE_ACCOUNT_FILE = ('/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json')
+SERVICE_ACCOUNT_FILE = ('/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json')  # Asegúrate de que esta ruta sea correcta
 CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
 # Función para crear eventos en Google Calendar
@@ -36,6 +36,13 @@ def create_event(start_time, end_time, summary):
         # Verifica que las credenciales y la conexión estén funcionando
         credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
         service = build('calendar', 'v3', credentials=credentials)
+
+        # Verificar que las credenciales estén funcionando correctamente
+        if service:
+            logger.info("Conexión exitosa con Google Calendar.")
+        else:
+            logger.error("Error en la conexión con Google Calendar.")
+            return None
 
         event = {
             'summary': summary,
@@ -93,8 +100,8 @@ def extract_datetime(message):
         event_date = datetime(year, months[month_name], day, hour, minute, tzinfo=pytz.timezone('America/New_York'))
         return event_date
     else:
-        print(f"Mensaje recibido: {message}")
-        print("No se pudo extraer la fecha y hora con las expresiones regulares.")
+        logger.error(f"Mensaje recibido: {message}")
+        logger.error("No se pudo extraer la fecha y hora con las expresiones regulares.")
         return None
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
@@ -105,12 +112,12 @@ class EventHandler(AssistantEventHandler):
 
     @override
     def on_text_created(self, text) -> None:
-        print(f"Asistente: {text.value}", end="", flush=True)
+        logger.info(f"Asistente: {text.value}", end="", flush=True)
         self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
-        print(delta.value, end="", flush=True)
+        logger.info(delta.value, end="", flush=True)
         self.assistant_message += delta.value
 
 @app.route('/generate-response', methods=['POST'])
