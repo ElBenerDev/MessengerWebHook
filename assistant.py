@@ -112,12 +112,12 @@ class EventHandler(AssistantEventHandler):
 
     @override
     def on_text_created(self, text) -> None:
-        logger.info(f"Asistente: {text.value}", end="", flush=True)
+        logger.info(f"Asistente: {text.value}")  # Cambié esto para no usar 'end'
         self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
-        logger.info(delta.value, end="", flush=True)
+        logger.info(delta.value)  # Cambié esto para no usar 'end'
         self.assistant_message += delta.value
 
 @app.route('/generate-response', methods=['POST'])
