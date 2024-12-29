@@ -6,7 +6,7 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
-const pythonServiceUrl = 'http://localhost:5000';  // Asegúrate de que el servicio Python esté corriendo en el puerto 5000
+const pythonServiceUrl = 'http://localhost:5000';
 
 app.use(express.json());
 
@@ -20,6 +20,7 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
 
     const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
 
+    // Validar que el mensaje sea un string
     if (typeof message !== 'string') {
         console.warn("El mensaje no es un string. Intentando convertirlo...");
         message = String(message || ""); // Convertir a string o usar un mensaje vacío
@@ -76,7 +77,7 @@ app.post('/webhook', async (req, res) => {
                     try {
                         const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
                             message: receivedMessage,
-                            sender_id: senderId,
+                            sender_id: senderId
                         });
 
                         const assistantMessage = response.data.response;
@@ -91,6 +92,10 @@ app.post('/webhook', async (req, res) => {
                             );
                         }
                     }
+                } else if (value && value.statuses) {
+                    continue;
+                } else {
+                    console.log("Mensaje no procesable:", JSON.stringify(value, null, 2));
                 }
             }
         }
