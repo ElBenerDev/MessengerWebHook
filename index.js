@@ -1,17 +1,16 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import axios from 'axios';
-import { google } from 'googleapis';
 
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 8080;
-const pythonServiceUrl = 'http://localhost:5000';  // Asegúrate de que este es el servidor correcto
+const port = process.env.PORT || 8080; // Puerto donde corre Node.js
+const pythonServiceUrl = 'http://localhost:5000'; // URL del servicio Python
 
 app.use(express.json());
 
-// Función para enviar mensaje a WhatsApp
+// Función para enviar mensajes a WhatsApp
 async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
@@ -21,11 +20,6 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     }
 
     const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
-
-    if (typeof message !== 'string') {
-        console.warn("El mensaje no es un string. Intentando convertirlo...");
-        message = String(message || ""); // Convertir a string o usar un mensaje vacío
-    }
 
     const payload = {
         messaging_product: "whatsapp",
@@ -41,12 +35,13 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
             },
         });
         console.log(`Mensaje enviado a ${recipientId}: ${message}`);
+        console.log("Respuesta de WhatsApp:", response.data);
     } catch (error) {
         console.error("Error al enviar mensaje a WhatsApp:", error.response?.data || error.message);
     }
 }
 
-// Webhook de WhatsApp para recibir mensajes
+// Webhook para recibir mensajes
 app.post('/webhook', async (req, res) => {
     try {
         if (!req.body || !req.body.entry || !Array.isArray(req.body.entry)) {
@@ -55,11 +50,6 @@ app.post('/webhook', async (req, res) => {
         }
 
         for (const entry of req.body.entry) {
-            if (!entry.changes || !Array.isArray(entry.changes)) {
-                console.error("El campo 'changes' no está presente o no es un array:", JSON.stringify(entry, null, 2));
-                continue;
-            }
-
             for (const change of entry.changes) {
                 const value = change.value;
                 if (
@@ -75,24 +65,21 @@ app.post('/webhook', async (req, res) => {
 
                     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
 
-                    // Llamar al servidor Python para generar una respuesta
                     try {
-                        const response = await axios.post(pythonServiceUrl, {
+                        const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
                             message: receivedMessage,
-                            sender_id: senderId
+                            sender_id: senderId,
                         });
 
                         const assistantMessage = response.data.response;
                         await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
                     } catch (error) {
                         console.error("Error al interactuar con el servicio Python:", error.message);
-                        if (senderId && phoneNumberId) {
-                            await sendMessageToWhatsApp(
-                                senderId,
-                                "Lo siento, hubo un problema al procesar tu mensaje.",
-                                phoneNumberId
-                            );
-                        }
+                        await sendMessageToWhatsApp(
+                            senderId,
+                            "Lo siento, hubo un problema al procesar tu mensaje.",
+                            phoneNumberId
+                        );
                     }
                 }
             }
@@ -105,7 +92,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Verificación del webhook de WhatsApp
+// Webhook de verificación
 app.get('/webhook', (req, res) => {
     const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
     const mode = req.query['hub.mode'];
@@ -126,60 +113,7 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// Crear evento en Google Calendar
-async function createEventInCalendar(start_time, end_time, summary) {
-    try {
-        // Autenticar con Google API
-        const auth = new google.auth.GoogleAuth({
-            keyFile: 'path/to/your/credentials.json', // Ruta al archivo de credenciales
-            scopes: ['https://www.googleapis.com/auth/calendar'],
-        });
-
-        const calendar = google.calendar({ version: 'v3', auth });
-
-        const event = {
-            summary: summary,
-            start: {
-                dateTime: start_time.toISOString(),
-                timeZone: 'America/New_York',
-            },
-            end: {
-                dateTime: end_time.toISOString(),
-                timeZone: 'America/New_York',
-            },
-        };
-
-        const response = await calendar.events.insert({
-            calendarId: 'primary', // O tu ID de calendario
-            resource: event,
-        });
-
-        return response.data.htmlLink;
-    } catch (error) {
-        console.error('Error al crear evento en Google Calendar:', error);
-        throw error;
-    }
-}
-
-// Crear eventos en Google Calendar cuando el bot lo indique
-app.post('/create-events', async (req, res) => {
-    const { events, startTime } = req.body;
-    const startDateTime = new Date(startTime);
-
-    try {
-        for (const eventSummary of events) {
-            const endTime = new Date(startDateTime.getTime() + 60 * 60 * 1000); // Evento de 1 hora
-            await createEventInCalendar(startDateTime, endTime, eventSummary);
-            startDateTime.setDate(startDateTime.getDate() + 1); // Mover al siguiente día
-        }
-
-        res.send({ message: 'Eventos creados correctamente' });
-    } catch (error) {
-        console.error("Error al crear los eventos:", error);
-        res.status(500).send({ error: 'Hubo un error al crear los eventos.' });
-    }
-});
-
+// Iniciar el servidor
 app.listen(port, () => {
     console.log(`Servidor escuchando en puerto ${port}`);
 });
