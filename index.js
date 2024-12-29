@@ -18,6 +18,7 @@ async function uploadAudioToWhatsApp(audioFilePath, phoneNumberId) {
 
     const formData = new FormData();
     formData.append("file", fs.createReadStream(audioFilePath));  // Archivo de audio
+    formData.append("type", "audio/mp3");  // Tipo de archivo de audio
     formData.append("messaging_product", "whatsapp");
 
     try {

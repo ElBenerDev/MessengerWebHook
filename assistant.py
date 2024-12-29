@@ -30,7 +30,7 @@ class EventHandler(AssistantEventHandler):
     def on_text_delta(self, delta, snapshot):
         self.assistant_message += delta.value
 
-# Función para convertir el texto a audio
+# Función para convertir el texto a audio y guardar en un archivo temporal
 def text_to_audio(text):
     tts = gTTS(text)
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
@@ -49,6 +49,7 @@ def generate_response():
         return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
 
     try:
+        # Crear un nuevo hilo si es necesario
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             user_threads[user_id] = thread.id
@@ -68,11 +69,13 @@ def generate_response():
             stream.until_done()
 
         assistant_message = event_handler.assistant_message
-        audio_file = text_to_audio(assistant_message)  # Convertir a audio
+        audio_file_path = text_to_audio(assistant_message)  # Convertir el texto a audio y obtener la ruta del archivo
 
-        return jsonify({'response': assistant_message, 'audio_file': audio_file})
+        # Devuelve el mensaje generado y la ruta del archivo de audio
+        return jsonify({'response': assistant_message, 'audio_file': audio_file_path})
 
     except Exception as e:
+        logger.error(f"Error al generar respuesta: {str(e)}")
         return jsonify({'response': f"Error al generar respuesta: {str(e)}"}), 500
 
 if __name__ == '__main__':
