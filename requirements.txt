@@ -2,5 +2,6 @@ flask
 openai
 requests
 typing-extensions
-gTTS
 pandas
+gTTS
+httpx  # Para realizar solicitudes HTTP de manera asíncrona en el backend Flask
