@@ -6,6 +6,7 @@ import os
 import logging
 from gtts import gTTS  # Añadido para convertir texto a audio
 import tempfile
+import shutil  # Añadido para mover el archivo de audio
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +45,10 @@ def text_to_audio(text):
     # Guardar el archivo de audio en un archivo temporal
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     tts.save(tmp_file.name)
-    return tmp_file.name
+    # Mover el archivo a una ubicación accesible si es necesario
+    final_path = f"/tmp/{os.path.basename(tmp_file.name)}"
+    shutil.move(tmp_file.name, final_path)
+    return final_path
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -64,8 +68,6 @@ def generate_response():
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
-        else:
-            thread_id = user_threads[user_id]
 
         # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(

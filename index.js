@@ -57,18 +57,38 @@ async function sendAudioToWhatsApp(recipientId, audioFilePath, phoneNumberId) {
         return;
     }
 
-    const formData = new FormData();
-    formData.append('file', fs.createReadStream(audioFilePath)); // Aquí se agrega el archivo de audio
-    formData.append('messaging_product', 'whatsapp');
-    formData.append('to', recipientId);
-
-    const headers = {
-        ...formData.getHeaders(),
-        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-    };
+    const mediaUploadUrl = `https://graph.facebook.com/v12.0/${phoneNumberId}/media`;
 
     try {
-        const response = await axios.post(url, formData, { headers });
+        // Subir el archivo de audio como un recurso multimedia a WhatsApp
+        const formData = new FormData();
+        formData.append('file', fs.createReadStream(audioFilePath));
+        formData.append('type', 'audio/mpeg');
+
+        const mediaUploadResponse = await axios.post(mediaUploadUrl, formData, {
+            headers: {
+                ...formData.getHeaders(),
+                'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            },
+        });
+
+        const mediaId = mediaUploadResponse.data.id;
+
+        // Enviar el recurso multimedia como mensaje
+        const payload = {
+            messaging_product: "whatsapp",
+            to: recipientId,
+            type: "audio",
+            audio: { id: mediaId },
+        };
+
+        const messageResponse = await axios.post(url, payload, {
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            },
+        });
+
         console.log(`Audio enviado a ${recipientId}: ${audioFilePath}`);
     } catch (error) {
         console.error("Error al enviar audio a WhatsApp:", error.response?.data || error.message);
