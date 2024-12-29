@@ -1,8 +1,6 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import axios from 'axios';
-import fs from 'fs';
-import path from 'path';
 
 dotenv.config();
 
@@ -12,7 +10,6 @@ const pythonServiceUrl = 'http://localhost:5000';
 
 app.use(express.json());
 
-// Enviar mensaje de texto a WhatsApp
 async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
@@ -23,8 +20,10 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
 
     const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
 
+    // Validar que el mensaje sea un string
     if (typeof message !== 'string') {
-        message = String(message || "");
+        console.warn("El mensaje no es un string. Intentando convertirlo...");
+        message = String(message || ""); // Convertir a string o usar un mensaje vacío
     }
 
     const payload = {
@@ -41,41 +40,12 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
             },
         });
         console.log(`Mensaje enviado a ${recipientId}: ${message}`);
+        console.log("Respuesta de WhatsApp:", response.data);
     } catch (error) {
         console.error("Error al enviar mensaje a WhatsApp:", error.response?.data || error.message);
     }
 }
 
-// Enviar audio a WhatsApp
-async function sendAudioToWhatsApp(recipientId, audioUrl, phoneNumberId) {
-    const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
-    const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
-
-    if (!WHATSAPP_ACCESS_TOKEN) {
-        console.error("FACEBOOK_PAGE_ACCESS_TOKEN no está configurado en las variables de entorno.");
-        return;
-    }
-
-    const payload = {
-        messaging_product: "whatsapp",
-        to: recipientId,
-        audio: { link: audioUrl },
-    };
-
-    try {
-        const response = await axios.post(url, payload, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-            },
-        });
-        console.log(`Audio enviado a ${recipientId}: ${audioUrl}`);
-    } catch (error) {
-        console.error("Error al enviar audio a WhatsApp:", error.response?.data || error.message);
-    }
-}
-
-// Webhook para recibir mensajes de WhatsApp
 app.post('/webhook', async (req, res) => {
     try {
         if (!req.body || !req.body.entry || !Array.isArray(req.body.entry)) {
@@ -91,21 +61,41 @@ app.post('/webhook', async (req, res) => {
 
             for (const change of entry.changes) {
                 const value = change.value;
-                if (value && value.messages && Array.isArray(value.messages)) {
-                    value.messages.forEach(async (message) => {
-                        const senderId = message.from;
-                        const phoneNumberId = value.metadata.phone_number_id;
+                if (
+                    value &&
+                    value.messages &&
+                    Array.isArray(value.messages) &&
+                    value.messages[0].type === 'text'
+                ) {
+                    const message = value.messages[0];
+                    const senderId = message.from;
+                    const receivedMessage = message.text.body;
+                    const phoneNumberId = value.metadata.phone_number_id;
 
-                        if (message.type === 'text') {
-                            const receivedMessage = message.text.body;
-                            console.log(`Mensaje de texto recibido: ${receivedMessage}`);
-                            await handleTextMessage(senderId, receivedMessage, phoneNumberId);
-                        } else if (message.type === 'audio') {
-                            const audioUrl = message.audio.url;
-                            console.log(`Audio recibido: ${audioUrl}`);
-                            await handleAudioMessage(senderId, audioUrl, phoneNumberId);
+                    console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
+
+                    try {
+                        const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
+                            message: receivedMessage,
+                            sender_id: senderId
+                        });
+
+                        const assistantMessage = response.data.response;
+                        await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
+                    } catch (error) {
+                        console.error("Error al interactuar con el servicio Python:", error.message);
+                        if (senderId && phoneNumberId) {
+                            await sendMessageToWhatsApp(
+                                senderId,
+                                "Lo siento, hubo un problema al procesar tu mensaje.",
+                                phoneNumberId
+                            );
                         }
-                    });
+                    }
+                } else if (value && value.statuses) {
+                    continue;
+                } else {
+                    console.log("Mensaje no procesable:", JSON.stringify(value, null, 2));
                 }
             }
         }
@@ -117,7 +107,6 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// Webhook de verificación
 app.get('/webhook', (req, res) => {
     const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
     const mode = req.query['hub.mode'];
