@@ -143,7 +143,7 @@ def convert_to_local_timezone(datetime_obj):
         datetime_obj = datetime_obj.astimezone(local_tz)  # Si ya tiene zona horaria, la convertimos
     return datetime_obj
 
-# Procesamiento del asistente
+# Función para extraer las fechas desde el mensaje del asistente
 def extract_datetime_from_message(message):
     try:
         start_match = re.search(r'\*\*start\*\*:\s*([\d\-T:+]+)', message)
@@ -192,9 +192,8 @@ def generate_response():
             content="Generando respuesta..."
         )
 
-        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+        logger.info(f"Mensaje generado por el asistente: {assistant_message['content']}")
 
-        # Verificar si la respuesta del asistente contiene las palabras "start" y "end"
         assistant_message_content = assistant_message.get('content', '')  # Asegúrate de que esto obtenga el contenido correcto
         
         if isinstance(assistant_message_content, str):
@@ -237,7 +236,6 @@ def generate_response():
         return jsonify({'response': f"Error al generar respuesta: {e}"}), 500
 
     return jsonify({'response': assistant_message_content})
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
