@@ -30,15 +30,34 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 SERVICE_ACCOUNT_FILE = '/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json'  # Asegúrate de que esta ruta sea correcta
 CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
-# Funciones auxiliares para Google Calendar
-def build_service():
-    """Crea y devuelve un servicio de Google Calendar."""
-    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    return build('calendar', 'v3', credentials=credentials)
+# Función para extraer fechas del mensaje del asistente
+def extract_datetime_from_message(message):
+    """
+    Extrae las fechas de inicio y fin desde el mensaje del asistente.
+    """
+    try:
+        # Actualizamos las expresiones regulares para adaptarnos al formato del asistente
+        start_match = re.search(r'\*\*start\*\*:\s*([\d\-T:+]+)', message)
+        end_match = re.search(r'\*\*end\*\*:\s*([\d\-T:+]+)', message)
 
+        if start_match and end_match:
+            start_datetime_str = start_match.group(1)
+            end_datetime_str = end_match.group(1)
+            logger.info(f"Fechas extraídas - Inicio: {start_datetime_str}, Fin: {end_datetime_str}")
+            return start_datetime_str, end_datetime_str
+        else:
+            logger.error("No se encontraron fechas válidas en el mensaje del asistente.")
+            return None, None
+    except Exception as e:
+        logger.error(f"Error al extraer fechas del mensaje: {e}")
+        return None, None
+
+
+# Función para crear eventos en Google Calendar
 def create_event(start_time, end_time, summary):
     try:
-        service = build_service()
+        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('calendar', 'v3', credentials=credentials)
 
         event = {
             'summary': summary,
@@ -59,48 +78,25 @@ def create_event(start_time, end_time, summary):
         logger.error(f"Error al crear el evento: {e}")
         return None
 
-def delete_event(event_summary):
+# Función para procesar el mensaje del asistente y crear el evento
+def create_event_from_assistant_response(message):
     try:
-        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-        service = build('calendar', 'v3', credentials=credentials)
+        start_datetime_str, end_datetime_str = extract_datetime_from_message(message)
 
-        # Listar eventos para encontrar el que coincida
-        now = datetime.utcnow().isoformat() + 'Z'  # Hora actual en formato RFC3339
-        events_result = service.events().list(calendarId=CALENDAR_ID, timeMin=now, singleEvents=True, orderBy='startTime').execute()
-        events = events_result.get('items', [])
+        if start_datetime_str and end_datetime_str:
+            start_datetime = datetime.fromisoformat(start_datetime_str)
+            end_datetime = datetime.fromisoformat(end_datetime_str)
 
-        logger.info(f"{len(events)} eventos encontrados para analizar.")
+            # Convertir a zona horaria de preferencia
+            tz = pytz.timezone("America/New_York")
+            start_datetime = start_datetime.astimezone(tz)
+            end_datetime = end_datetime.astimezone(tz)
 
-        for event in events:
-            logger.debug(f"Analizando evento: {event['summary']} con ID {event['id']}")
-            if event_summary.lower() in event['summary'].lower():
-                service.events().delete(calendarId=CALENDAR_ID, eventId=event['id']).execute()
-                logger.info(f"Evento eliminado: {event['summary']}")
-                return f"El evento '{event['summary']}' ha sido cancelado con éxito."
-
-        logger.warning(f"No se encontró el evento con el resumen: {event_summary}")
-        return f"No se encontró el evento '{event_summary}'."
-    except Exception as e:
-        logger.error(f"Error al eliminar el evento: {e}")
-        return f"Hubo un error al intentar cancelar el evento: {e}"
-
-# Procesamiento del asistente
-def extract_datetime_from_message(message):
-    try:
-        start_match = re.search(r'\*\*start\*\*:\s*([\d\-T:+]+)', message)
-        end_match = re.search(r'\*\*end\*\*:\s*([\d\-T:+]+)', message)
-
-        if start_match and end_match:
-            start_datetime_str = start_match.group(1)
-            end_datetime_str = end_match.group(1)
-            logger.info(f"Fechas extraídas - Inicio: {start_datetime_str}, Fin: {end_datetime_str}")
-            return start_datetime_str, end_datetime_str
+            create_event(start_datetime, end_datetime, "Cita Prueba")
         else:
-            logger.error("No se encontraron fechas válidas en el mensaje del asistente.")
-            return None, None
+            logger.error("Fechas no válidas para crear el evento.")
     except Exception as e:
-        logger.error(f"Error al extraer fechas del mensaje: {e}")
-        return None, None
+        logger.error(f"Error al procesar el evento: {e}")
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
@@ -153,19 +149,7 @@ def generate_response():
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
         if "start" in assistant_message.lower() and "end" in assistant_message.lower():
-            start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message)
-
-            if start_datetime_str and end_datetime_str:
-                start_datetime = datetime.fromisoformat(start_datetime_str)
-                end_datetime = datetime.fromisoformat(end_datetime_str)
-
-                create_event(start_datetime, end_datetime, "Cita Prueba")
-        elif "cancelar" in user_message.lower():
-            summary_match = re.search(r'cita\s+(.*)', user_message.lower())
-            if summary_match:
-                summary = summary_match.group(1).strip()
-                response_message = delete_event(summary)
-                return jsonify({'response': response_message})
+            create_event_from_assistant_response(assistant_message)
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {e}")
