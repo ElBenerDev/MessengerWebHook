@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import pytz
 import os
 import logging
-import re
 from typing_extensions import override
 
 # Configuración de logging
@@ -64,55 +63,32 @@ def create_event(start_time, end_time, summary):
         logger.error(f"Error al crear el evento: {str(e)}")
         return None
 
-# Función para extraer fecha y hora del mensaje del usuario
-def extract_datetime(message):
-    # Expresión regular para detectar la fecha
-    date_pattern = r"(\d{1,2})\s*(de)?\s*(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s*(de)?\s*(\d{4})"
-    # Expresión regular para detectar la hora (AM/PM)
-    time_pattern = r"(\d{1,2})(?:[:.])?(\d{2})?\s*(AM|PM|am|pm)?"
+# Función para procesar el mensaje del asistente y crear el evento
+def create_event_from_assistant_response(message):
+    try:
+        # Aquí asumimos que el mensaje del asistente tiene el formato adecuado
+        # Ejemplo de formato esperado del asistente:
+        # - summary: Cita Prueba
+        # - start: 2024-12-30T14:00:00+00:00
+        # - end: 2024-12-30T15:00:00+00:00
 
-    # Buscar la fecha
-    date_match = re.search(date_pattern, message, re.IGNORECASE)
-    # Buscar la hora
-    time_match = re.search(time_pattern, message, re.IGNORECASE)
+        # Buscar las fechas y la hora del mensaje del asistente
+        start_datetime_str = "2024-12-30T14:00:00+00:00"  # Ejemplo de cómo puede ser proporcionado
+        end_datetime_str = "2024-12-30T15:00:00+00:00"
 
-    if date_match and time_match:
-        day = int(date_match.group(1))
-        month_name = date_match.group(3).lower()
-        year = int(date_match.group(5))
-        hour = int(time_match.group(1))
-        minute = int(time_match.group(2) if time_match.group(2) else 0)
+        # Convertir las cadenas ISO 8601 a objetos datetime
+        start_datetime = datetime.fromisoformat(start_datetime_str)
+        end_datetime = datetime.fromisoformat(end_datetime_str)
 
-        # Mapear el nombre del mes al número correspondiente
-        months = {
-            "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5,
-            "junio": 6, "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10,
-            "noviembre": 11, "diciembre": 12
-        }
+        # Convertir a la zona horaria de tu preferencia, por ejemplo "America/New_York"
+        start_datetime = start_datetime.astimezone(pytz.timezone("America/New_York"))
+        end_datetime = end_datetime.astimezone(pytz.timezone("America/New_York"))
 
-        # Convertir la hora a 24 horas si es AM/PM
-        if time_match.group(3):
-            if time_match.group(3).lower() == "pm":
-                if hour != 12:
-                    hour += 12  # Convierte PM a formato de 24 horas (excepto 12 PM)
-            elif time_match.group(3).lower() == "am":
-                if hour == 12:
-                    hour = 0  # Convierte 12 AM a 00:00 (medianoche)
+        # Llamar a la función que crea el evento en Google Calendar
+        create_event(start_datetime, end_datetime, "Cita Prueba")
 
-        # Verificar si la hora está en el rango válido
-        if hour < 0 or hour > 23:
-            print(f"Hora inválida: {hour}")
-            return None
-
-        # Crear un objeto datetime con la fecha y hora extraída
-        event_date = datetime(year, months[month_name], day, hour, minute, tzinfo=pytz.timezone('America/New_York'))
-        return event_date
-    else:
-        print(f"Mensaje recibido: {message}")
-        print("No se pudo extraer la fecha y hora con las expresiones regulares.")
-        return None
-
-
+    except Exception as e:
+        logger.error(f"Error al procesar el evento: {e}")
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
@@ -169,14 +145,7 @@ def generate_response():
 
         # Verificar si el mensaje contiene información para crear un evento
         if "evento" in assistant_message.lower():
-            event_datetime = extract_datetime(assistant_message)
-            if event_datetime:
-                logger.info(f"Creando evento para la fecha y hora extraída: {event_datetime}")
-                # Crear evento en Google Calendar
-                create_event(event_datetime, event_datetime + timedelta(hours=1), "Cita Prueba")
-            else:
-                logger.error("No se pudo extraer la fecha y hora del mensaje del asistente.")
-                return jsonify({'response': "No se pudo procesar la fecha y hora del evento."}), 400
+            create_event_from_assistant_response(assistant_message)
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
