@@ -36,8 +36,9 @@ def extract_datetime_from_message(message):
     Extrae las fechas de inicio y fin desde el mensaje del asistente.
     """
     try:
-        start_match = re.search(r'"start":\s*"([^"]+)"', message)
-        end_match = re.search(r'"end":\s*"([^"]+)"', message)
+        # Actualizamos las expresiones regulares para adaptarnos al formato del asistente
+        start_match = re.search(r'\*\*start\*\*:\s*([\d\-T:+]+)', message)
+        end_match = re.search(r'\*\*end\*\*:\s*([\d\-T:+]+)', message)
 
         if start_match and end_match:
             start_datetime_str = start_match.group(1)
@@ -50,6 +51,7 @@ def extract_datetime_from_message(message):
     except Exception as e:
         logger.error(f"Error al extraer fechas del mensaje: {e}")
         return None, None
+
 
 # Función para crear eventos en Google Calendar
 def create_event(start_time, end_time, summary):
