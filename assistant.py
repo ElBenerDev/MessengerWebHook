@@ -25,6 +25,9 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_Q3M9vDA4aN89qQNH1tDXhjaE")
 # Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
 
+# Diccionario para almacenar las citas con ID de usuario y ID de evento
+user_events = {}
+
 # Parámetros de Google Calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 SERVICE_ACCOUNT_FILE = '/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json'  # Asegúrate de que esta ruta sea correcta
@@ -36,7 +39,7 @@ def build_service():
     credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('calendar', 'v3', credentials=credentials)
 
-def create_event(start_time, end_time, summary):
+def create_event(start_time, end_time, summary, user_id):
     try:
         service = build_service()
 
@@ -54,32 +57,31 @@ def create_event(start_time, end_time, summary):
 
         event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
         logger.info(f'Evento creado: {event.get("htmlLink")}')
+
+        # Almacenar el evento en el diccionario
+        user_events[user_id] = event['id']
         return event
     except Exception as e:
         logger.error(f"Error al crear el evento: {e}")
         return None
 
-def delete_event(event_summary):
+def delete_event(user_id):
     try:
-        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-        service = build('calendar', 'v3', credentials=credentials)
+        # Verificar si el usuario tiene una cita programada
+        if user_id in user_events:
+            event_id = user_events[user_id]
 
-        # Listar eventos para encontrar el que coincida
-        now = datetime.utcnow().isoformat() + 'Z'  # Hora actual en formato RFC3339
-        events_result = service.events().list(calendarId=CALENDAR_ID, timeMin=now, singleEvents=True, orderBy='startTime').execute()
-        events = events_result.get('items', [])
+            # Eliminar el evento usando el ID del evento
+            service = build_service()
+            service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
+            logger.info(f"Evento con ID {event_id} eliminado.")
 
-        logger.info(f"{len(events)} eventos encontrados para analizar.")
+            # Eliminar del diccionario de eventos
+            del user_events[user_id]
+            return f"El evento ha sido cancelado con éxito."
 
-        for event in events:
-            logger.debug(f"Analizando evento: {event['summary']} con ID {event['id']}")
-            if event_summary.lower() in event['summary'].lower():
-                service.events().delete(calendarId=CALENDAR_ID, eventId=event['id']).execute()
-                logger.info(f"Evento eliminado: {event['summary']}")
-                return f"El evento '{event['summary']}' ha sido cancelado con éxito."
-
-        logger.warning(f"No se encontró el evento con el resumen: {event_summary}")
-        return f"No se encontró el evento '{event_summary}'."
+        else:
+            return "No tienes una cita programada para cancelar."
     except Exception as e:
         logger.error(f"Error al eliminar el evento: {e}")
         return f"Hubo un error al intentar cancelar el evento: {e}"
@@ -159,13 +161,11 @@ def generate_response():
                 start_datetime = datetime.fromisoformat(start_datetime_str)
                 end_datetime = datetime.fromisoformat(end_datetime_str)
 
-                create_event(start_datetime, end_datetime, "Cita Prueba")
+                # Crear evento y almacenar ID del evento en el diccionario
+                create_event(start_datetime, end_datetime, "Cita Prueba", user_id)
         elif "cancelar" in user_message.lower():
-            summary_match = re.search(r'cita\s+(.*)', user_message.lower())
-            if summary_match:
-                summary = summary_match.group(1).strip()
-                response_message = delete_event(summary)
-                return jsonify({'response': response_message})
+            response_message = delete_event(user_id)
+            return jsonify({'response': response_message})
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {e}")
