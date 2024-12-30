@@ -31,7 +31,6 @@ SERVICE_ACCOUNT_FILE = '/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json'  # Asegú
 CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
 # Funciones auxiliares para Google Calendar
-
 def build_service():
     """Crea y devuelve un servicio de Google Calendar."""
     credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
@@ -70,21 +69,22 @@ def delete_event(event_summary):
         events_result = service.events().list(calendarId=CALENDAR_ID, timeMin=now, singleEvents=True, orderBy='startTime').execute()
         events = events_result.get('items', [])
 
+        logger.info(f"{len(events)} eventos encontrados para analizar.")
+
         for event in events:
-            if event['summary'].lower() == event_summary.lower():
+            logger.debug(f"Analizando evento: {event['summary']} con ID {event['id']}")
+            if event_summary.lower() in event['summary'].lower():
                 service.events().delete(calendarId=CALENDAR_ID, eventId=event['id']).execute()
-                logger.info(f"Evento eliminado: {event_summary}")
-                return f"El evento '{event_summary}' ha sido cancelado con éxito."
-        
+                logger.info(f"Evento eliminado: {event['summary']}")
+                return f"El evento '{event['summary']}' ha sido cancelado con éxito."
+
         logger.warning(f"No se encontró el evento con el resumen: {event_summary}")
         return f"No se encontró el evento '{event_summary}'."
     except Exception as e:
         logger.error(f"Error al eliminar el evento: {e}")
         return f"Hubo un error al intentar cancelar el evento: {e}"
 
-
 # Procesamiento del asistente
-
 def extract_datetime_from_message(message):
     try:
         start_match = re.search(r'\*\*start\*\*:\s*([\d\-T:+]+)', message)
@@ -164,11 +164,8 @@ def generate_response():
             summary_match = re.search(r'cita\s+(.*)', user_message.lower())
             if summary_match:
                 summary = summary_match.group(1).strip()
-                success = delete_event(summary)
-                if success:
-                    return jsonify({'response': f"La cita '{summary}' fue cancelada correctamente."})
-                else:
-                    return jsonify({'response': f"No se encontró ninguna cita con el nombre '{summary}'."})
+                response_message = delete_event(summary)
+                return jsonify({'response': response_message})
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {e}")
