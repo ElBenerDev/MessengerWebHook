@@ -60,11 +60,9 @@ def create_event(start_time, end_time, summary, description=None):
         logger.error(f"Error al crear el evento: {e}")
         return None
 
-
 def delete_event(event_summary):
     try:
-        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-        service = build('calendar', 'v3', credentials=credentials)
+        service = build_service()
 
         # Listar eventos para encontrar el que coincida
         now = datetime.utcnow().isoformat() + 'Z'  # Hora actual en formato RFC3339
@@ -135,18 +133,22 @@ def generate_response():
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             user_threads[user_id] = thread.id
-        else:
-            thread_id = user_threads[user_id]
+        thread_id = user_threads[user_id]
+
+        # Verificar si el hilo está activo
+        if client.beta.threads.runs.active(thread_id):
+            logger.info("Esperando a que el hilo actual termine.")
+            client.beta.threads.runs.wait_until_done(thread_id)
 
         client.beta.threads.messages.create(
-            thread_id=user_threads[user_id],
+            thread_id=thread_id,
             role="user",
             content=user_message
         )
 
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
-            thread_id=user_threads[user_id],
+            thread_id=thread_id,
             assistant_id=assistant_id,
             event_handler=event_handler,
         ) as stream:
@@ -162,11 +164,9 @@ def generate_response():
                 start_datetime = datetime.fromisoformat(start_datetime_str)
                 end_datetime = datetime.fromisoformat(end_datetime_str)
 
-                # Extraer el contexto de la conversación para la descripción
                 context_match = re.search(r'descripción\*\*:\s*(.*)', assistant_message, re.IGNORECASE)
                 context = context_match.group(1).strip() if context_match else "Sin descripción"
 
-                # Crear evento con título (nombre del cliente) y descripción (contexto)
                 create_event(start_datetime, end_datetime, user_name, context)
 
         elif "cancelar" in user_message.lower():
@@ -181,7 +181,6 @@ def generate_response():
         return jsonify({'response': f"Error al generar respuesta: {e}"}), 500
 
     return jsonify({'response': assistant_message})
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
