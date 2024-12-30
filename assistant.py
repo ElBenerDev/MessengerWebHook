@@ -30,13 +30,61 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 SERVICE_ACCOUNT_FILE = '/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json'  # Asegúrate de que esta ruta sea correcta
 CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
-# Función para extraer fechas del mensaje del asistente
-def extract_datetime_from_message(message):
-    """
-    Extrae las fechas de inicio y fin desde el mensaje del asistente.
-    """
+# Funciones auxiliares para Google Calendar
+
+def build_service():
+    """Crea y devuelve un servicio de Google Calendar."""
+    credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    return build('calendar', 'v3', credentials=credentials)
+
+def create_event(start_time, end_time, summary):
     try:
-        # Actualizamos las expresiones regulares para adaptarnos al formato del asistente
+        service = build_service()
+
+        event = {
+            'summary': summary,
+            'start': {
+                'dateTime': start_time.isoformat(),
+                'timeZone': 'America/Argentina/Buenos_Aires',
+            },
+            'end': {
+                'dateTime': end_time.isoformat(),
+                'timeZone': 'America/Argentina/Buenos_Aires',
+            },
+        }
+
+        event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+        logger.info(f'Evento creado: {event.get("htmlLink")}')
+        return event
+    except Exception as e:
+        logger.error(f"Error al crear el evento: {e}")
+        return None
+
+def delete_event(summary):
+    """Busca y elimina un evento en Google Calendar por su resumen."""
+    try:
+        service = build_service()
+        events_result = service.events().list(calendarId=CALENDAR_ID, q=summary, singleEvents=True).execute()
+        events = events_result.get('items', [])
+
+        if not events:
+            logger.info("No se encontraron eventos para eliminar.")
+            return False
+
+        for event in events:
+            event_id = event['id']
+            service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
+            logger.info(f"Evento eliminado: {event.get('summary')}")
+
+        return True
+    except Exception as e:
+        logger.error(f"Error al eliminar el evento: {e}")
+        return False
+
+# Procesamiento del asistente
+
+def extract_datetime_from_message(message):
+    try:
         start_match = re.search(r'\*\*start\*\*:\s*([\d\-T:+]+)', message)
         end_match = re.search(r'\*\*end\*\*:\s*([\d\-T:+]+)', message)
 
@@ -51,52 +99,6 @@ def extract_datetime_from_message(message):
     except Exception as e:
         logger.error(f"Error al extraer fechas del mensaje: {e}")
         return None, None
-
-
-# Función para crear eventos en Google Calendar
-def create_event(start_time, end_time, summary):
-    try:
-        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-        service = build('calendar', 'v3', credentials=credentials)
-
-        event = {
-            'summary': summary,
-            'start': {
-                'dateTime': start_time.isoformat(),
-                'timeZone': 'America/New_York',
-            },
-            'end': {
-                'dateTime': end_time.isoformat(),
-                'timeZone': 'America/New_York',
-            },
-        }
-
-        event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-        logger.info(f'Evento creado: {event.get("htmlLink")}')
-        return event
-    except Exception as e:
-        logger.error(f"Error al crear el evento: {e}")
-        return None
-
-# Función para procesar el mensaje del asistente y crear el evento
-def create_event_from_assistant_response(message):
-    try:
-        start_datetime_str, end_datetime_str = extract_datetime_from_message(message)
-
-        if start_datetime_str and end_datetime_str:
-            start_datetime = datetime.fromisoformat(start_datetime_str)
-            end_datetime = datetime.fromisoformat(end_datetime_str)
-
-            # Convertir a zona horaria de preferencia
-            tz = pytz.timezone("America/New_York")
-            start_datetime = start_datetime.astimezone(tz)
-            end_datetime = end_datetime.astimezone(tz)
-
-            create_event(start_datetime, end_datetime, "Cita Prueba")
-        else:
-            logger.error("Fechas no válidas para crear el evento.")
-    except Exception as e:
-        logger.error(f"Error al procesar el evento: {e}")
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
@@ -149,7 +151,22 @@ def generate_response():
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
         if "start" in assistant_message.lower() and "end" in assistant_message.lower():
-            create_event_from_assistant_response(assistant_message)
+            start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message)
+
+            if start_datetime_str and end_datetime_str:
+                start_datetime = datetime.fromisoformat(start_datetime_str)
+                end_datetime = datetime.fromisoformat(end_datetime_str)
+
+                create_event(start_datetime, end_datetime, "Cita Prueba")
+        elif "cancelar" in user_message.lower():
+            summary_match = re.search(r'cita\s+(.*)', user_message.lower())
+            if summary_match:
+                summary = summary_match.group(1).strip()
+                success = delete_event(summary)
+                if success:
+                    return jsonify({'response': f"La cita '{summary}' fue cancelada correctamente."})
+                else:
+                    return jsonify({'response': f"No se encontró ninguna cita con el nombre '{summary}'."})
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {e}")
