@@ -40,9 +40,6 @@ def create_event(start_time, end_time, summary):
     try:
         service = build_service()
 
-        # Verificación de las fechas antes de proceder
-        logger.info(f"Creando evento: {summary} | Inicio: {start_time} | Fin: {end_time}")
-
         event = {
             'summary': summary,
             'start': {
@@ -55,15 +52,9 @@ def create_event(start_time, end_time, summary):
             },
         }
 
-        event_response = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
-
-        # Verificación de la creación del evento
-        if event_response:
-            logger.info(f"Evento creado con éxito: {event_response.get('htmlLink')}")
-            return event_response
-        else:
-            logger.error("No se pudo crear el evento.")
-            return None
+        event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
+        logger.info(f'Evento creado: {event.get("htmlLink")}')
+        return event
     except Exception as e:
         logger.error(f"Error al crear el evento: {e}")
         return None
@@ -92,16 +83,6 @@ def delete_event(event_summary):
     except Exception as e:
         logger.error(f"Error al eliminar el evento: {e}")
         return f"Hubo un error al intentar cancelar el evento: {e}"
-
-# Función para convertir fechas a la zona horaria local
-def convert_to_local_timezone(datetime_obj):
-    """Convierte la fecha y hora a la zona horaria local (Buenos Aires)"""
-    local_tz = pytz.timezone('America/Argentina/Buenos_Aires')
-    if datetime_obj.tzinfo is None:
-        datetime_obj = local_tz.localize(datetime_obj)  # Si es naive, localizamos
-    else:
-        datetime_obj = datetime_obj.astimezone(local_tz)  # Si ya tiene zona horaria, la convertimos
-    return datetime_obj
 
 # Procesamiento del asistente
 def extract_datetime_from_message(message):
@@ -171,7 +152,6 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Verificar si el mensaje del asistente tiene las fechas necesarias
         if "start" in assistant_message.lower() and "end" in assistant_message.lower():
             start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message)
 
@@ -179,19 +159,7 @@ def generate_response():
                 start_datetime = datetime.fromisoformat(start_datetime_str)
                 end_datetime = datetime.fromisoformat(end_datetime_str)
 
-                # Verificar que las fechas sean válidas antes de intentar la creación
-                logger.info(f"Fechas extraídas - Inicio: {start_datetime} | Fin: {end_datetime}")
-
-                # Convertir las fechas a la zona horaria correcta
-                start_datetime = convert_to_local_timezone(start_datetime)
-                end_datetime = convert_to_local_timezone(end_datetime)
-
-                # Intentar crear el evento
-                event = create_event(start_datetime, end_datetime, "Cita médica")
-                if event:
-                    return jsonify({'response': "Evento creado con éxito. ¡Revisa tu calendario!"})
-                else:
-                    return jsonify({'response': "Hubo un problema al crear el evento."})
+                create_event(start_datetime, end_datetime, "Cita Prueba")
         elif "cancelar" in user_message.lower():
             summary_match = re.search(r'cita\s+(.*)', user_message.lower())
             if summary_match:
