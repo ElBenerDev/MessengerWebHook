@@ -36,12 +36,13 @@ def build_service():
     credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('calendar', 'v3', credentials=credentials)
 
-def create_event(start_time, end_time, summary):
+def create_event(start_time, end_time, summary, description=None):
     try:
         service = build_service()
 
         event = {
-            'summary': summary,
+            'summary': summary,  # Título: Nombre del cliente
+            'description': description,  # Descripción: Contexto del asistente
             'start': {
                 'dateTime': start_time.isoformat(),
                 'timeZone': 'America/Argentina/Buenos_Aires',
@@ -58,6 +59,7 @@ def create_event(start_time, end_time, summary):
     except Exception as e:
         logger.error(f"Error al crear el evento: {e}")
         return None
+
 
 def delete_event(event_summary):
     try:
@@ -121,6 +123,7 @@ def generate_response():
     data = request.json
     user_message = data.get('message')
     user_id = data.get('sender_id')
+    user_name = data.get('user_name', "Usuario")  # Nombre del cliente (título del evento)
 
     if not user_message or not user_id:
         logger.error("No se proporcionó un mensaje o ID de usuario válido.")
@@ -159,7 +162,13 @@ def generate_response():
                 start_datetime = datetime.fromisoformat(start_datetime_str)
                 end_datetime = datetime.fromisoformat(end_datetime_str)
 
-                create_event(start_datetime, end_datetime, "Cita Prueba")
+                # Extraer el contexto de la conversación para la descripción
+                context_match = re.search(r'descripción\*\*:\s*(.*)', assistant_message, re.IGNORECASE)
+                context = context_match.group(1).strip() if context_match else "Sin descripción"
+
+                # Crear evento con título (nombre del cliente) y descripción (contexto)
+                create_event(start_datetime, end_datetime, user_name, context)
+
         elif "cancelar" in user_message.lower():
             summary_match = re.search(r'cita\s+(.*)', user_message.lower())
             if summary_match:
@@ -172,6 +181,7 @@ def generate_response():
         return jsonify({'response': f"Error al generar respuesta: {e}"}), 500
 
     return jsonify({'response': assistant_message})
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
