@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from openai import OpenAI
+from openai import AssistantEventHandler
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from datetime import datetime
@@ -7,8 +8,7 @@ import pytz
 import os
 import logging
 import re
-import requests
-import json
+from typing_extensions import override
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -30,52 +30,13 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 SERVICE_ACCOUNT_FILE = '/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json'  # Asegúrate de que esta ruta sea correcta
 CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
-# Access Token de Mercado Pago (sandbox)
-access_token = 'APP_USR-5019818987249464-123000-1bb2908a2fd9a65dfaa42a8ad2c38b3a-2183981747'
-url = "https://api.mercadopago.com/checkout/preferences"
-
 # Funciones auxiliares para Google Calendar
 def build_service():
     """Crea y devuelve un servicio de Google Calendar."""
     credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('calendar', 'v3', credentials=credentials)
 
-def create_payment_preference(amount):
-    """Crea una preferencia de pago en Mercado Pago."""
-    preference_data = {
-        "items": [
-            {
-                "title": "Cita en el Calendario",
-                "quantity": 1,
-                "currency_id": "ARS",
-                "unit_price": amount
-            }
-        ],
-        "back_urls": {
-            "success": "https://www.tusitio.com/success",
-            "failure": "https://www.tusitio.com/failure",
-            "pending": "https://www.tusitio.com/pending"
-        },
-        "auto_return": "approved"
-    }
-
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    }
-
-    # Realizamos la solicitud POST para crear la preferencia
-    response = requests.post(url, data=json.dumps(preference_data), headers=headers)
-
-    if response.status_code == 201:
-        preference = response.json()
-        return preference["init_point"]  # Retornamos el link para redirigir al usuario
-    else:
-        logger.error("Error al crear la preferencia de pago:", response.json())
-        return None
-
-def create_event(start_time, end_time, summary, amount):
-    """Crea un evento en Google Calendar y genera una preferencia de pago en Mercado Pago."""
+def create_event(start_time, end_time, summary):
     try:
         service = build_service()
 
@@ -91,27 +52,17 @@ def create_event(start_time, end_time, summary, amount):
             },
         }
 
-        # Crear el evento en Google Calendar
         event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
         logger.info(f'Evento creado: {event.get("htmlLink")}')
-
-        # Crear la preferencia de pago en Mercado Pago
-        payment_url = create_payment_preference(amount)
-        
-        if payment_url:
-            # Devuelves el link de pago junto con la URL del evento
-            return {"event_url": event.get("htmlLink"), "payment_url": payment_url}
-        else:
-            return {"event_url": event.get("htmlLink"), "payment_url": None}
-
+        return event
     except Exception as e:
         logger.error(f"Error al crear el evento: {e}")
         return None
 
 def delete_event(event_summary):
-    """Cancela un evento en Google Calendar."""
     try:
-        service = build_service()
+        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('calendar', 'v3', credentials=credentials)
 
         # Listar eventos para encontrar el que coincida
         now = datetime.utcnow().isoformat() + 'Z'  # Hora actual en formato RFC3339
@@ -143,7 +94,7 @@ def convert_to_local_timezone(datetime_obj):
         datetime_obj = datetime_obj.astimezone(local_tz)  # Si ya tiene zona horaria, la convertimos
     return datetime_obj
 
-# Función para extraer las fechas desde el mensaje del asistente
+# Procesamiento del asistente
 def extract_datetime_from_message(message):
     try:
         start_match = re.search(r'\*\*start\*\*:\s*([\d\-T:+]+)', message)
@@ -160,6 +111,20 @@ def extract_datetime_from_message(message):
     except Exception as e:
         logger.error(f"Error al extraer fechas del mensaje: {e}")
         return None, None
+
+# Crear un manejador de eventos para manejar el stream de respuestas del asistente
+class EventHandler(AssistantEventHandler):
+    def __init__(self):
+        super().__init__()
+        self.assistant_message = ""
+
+    @override
+    def on_text_created(self, text) -> None:
+        self.assistant_message += text.value
+
+    @override
+    def on_text_delta(self, delta, snapshot):
+        self.assistant_message += delta.value
 
 @app.route('/generate-response', methods=['POST'])
 def generate_response():
@@ -186,45 +151,29 @@ def generate_response():
             content=user_message
         )
 
-        assistant_message = client.beta.threads.messages.create(
+        event_handler = EventHandler()
+        with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
-            role="assistant",
-            content="Generando respuesta..."
-        )
+            assistant_id=assistant_id,
+            event_handler=event_handler,
+        ) as stream:
+            stream.until_done()
 
-        logger.info(f"Mensaje generado por el asistente: {assistant_message['content']}")
+        assistant_message = event_handler.assistant_message
+        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Asegúrate de acceder al contenido correctamente
-        assistant_message_content = assistant_message['content'] if isinstance(assistant_message, dict) else ''
+        if "start" in assistant_message.lower() and "end" in assistant_message.lower():
+            start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message)
 
-        if isinstance(assistant_message_content, str):
-            if "start" in assistant_message_content.lower() and "end" in assistant_message_content.lower():
-                start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message_content)
+            if start_datetime_str and end_datetime_str:
+                start_datetime = datetime.fromisoformat(start_datetime_str)
+                end_datetime = datetime.fromisoformat(end_datetime_str)
 
-                if start_datetime_str and end_datetime_str:
-                    start_datetime = datetime.fromisoformat(start_datetime_str)
-                    end_datetime = datetime.fromisoformat(end_datetime_str)
+                # Convertir las fechas a la zona horaria correcta
+                start_datetime = convert_to_local_timezone(start_datetime)
+                end_datetime = convert_to_local_timezone(end_datetime)
 
-                    # Convertir las fechas a la zona horaria correcta
-                    start_datetime = convert_to_local_timezone(start_datetime)
-                    end_datetime = convert_to_local_timezone(end_datetime)
-
-                    # Llamar a la función para crear el evento y obtener la URL del pago
-                    payment_amount = 100.00  # Ejemplo: el costo de la cita es 100
-                    result = create_event(start_datetime, end_datetime, "Cita prueba", payment_amount)
-
-                    if result:
-                        event_url = result.get("event_url")
-                        payment_url = result.get("payment_url")
-                        if payment_url:
-                            return jsonify({
-                                'response': f'El evento fue creado exitosamente: {event_url}. Para completar el pago, por favor visita: {payment_url}'
-                            })
-                        else:
-                            return jsonify({
-                                'response': f'El evento fue creado exitosamente: {event_url}.'
-                            })
-
+                create_event(start_datetime, end_datetime, "Cita prueba")
         elif "cancelar" in user_message.lower():
             summary_match = re.search(r'cita\s+(.*)', user_message.lower())
             if summary_match:
@@ -236,7 +185,7 @@ def generate_response():
         logger.error(f"Error al generar respuesta: {e}")
         return jsonify({'response': f"Error al generar respuesta: {e}"}), 500
 
-    return jsonify({'response': assistant_message_content})
+    return jsonify({'response': assistant_message})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
