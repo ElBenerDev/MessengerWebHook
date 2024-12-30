@@ -194,32 +194,36 @@ def generate_response():
 
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        if "start" in assistant_message.lower() and "end" in assistant_message.lower():
-            start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message)
+        # Verificar si la respuesta del asistente contiene las palabras "start" y "end"
+        assistant_message_content = assistant_message.get('content', '')  # Asegúrate de que esto obtenga el contenido correcto
+        
+        if isinstance(assistant_message_content, str):
+            if "start" in assistant_message_content.lower() and "end" in assistant_message_content.lower():
+                start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message_content)
 
-            if start_datetime_str and end_datetime_str:
-                start_datetime = datetime.fromisoformat(start_datetime_str)
-                end_datetime = datetime.fromisoformat(end_datetime_str)
+                if start_datetime_str and end_datetime_str:
+                    start_datetime = datetime.fromisoformat(start_datetime_str)
+                    end_datetime = datetime.fromisoformat(end_datetime_str)
 
-                # Convertir las fechas a la zona horaria correcta
-                start_datetime = convert_to_local_timezone(start_datetime)
-                end_datetime = convert_to_local_timezone(end_datetime)
+                    # Convertir las fechas a la zona horaria correcta
+                    start_datetime = convert_to_local_timezone(start_datetime)
+                    end_datetime = convert_to_local_timezone(end_datetime)
 
-                # Llamar a la función para crear el evento y obtener la URL del pago
-                payment_amount = 100.00  # Ejemplo: el costo de la cita es 100
-                result = create_event(start_datetime, end_datetime, "Cita prueba", payment_amount)
+                    # Llamar a la función para crear el evento y obtener la URL del pago
+                    payment_amount = 100.00  # Ejemplo: el costo de la cita es 100
+                    result = create_event(start_datetime, end_datetime, "Cita prueba", payment_amount)
 
-                if result:
-                    event_url = result.get("event_url")
-                    payment_url = result.get("payment_url")
-                    if payment_url:
-                        return jsonify({
-                            'response': f'El evento fue creado exitosamente: {event_url}. Para completar el pago, por favor visita: {payment_url}'
-                        })
-                    else:
-                        return jsonify({
-                            'response': f'El evento fue creado exitosamente: {event_url}.'
-                        })
+                    if result:
+                        event_url = result.get("event_url")
+                        payment_url = result.get("payment_url")
+                        if payment_url:
+                            return jsonify({
+                                'response': f'El evento fue creado exitosamente: {event_url}. Para completar el pago, por favor visita: {payment_url}'
+                            })
+                        else:
+                            return jsonify({
+                                'response': f'El evento fue creado exitosamente: {event_url}.'
+                            })
 
         elif "cancelar" in user_message.lower():
             summary_match = re.search(r'cita\s+(.*)', user_message.lower())
@@ -232,7 +236,8 @@ def generate_response():
         logger.error(f"Error al generar respuesta: {e}")
         return jsonify({'response': f"Error al generar respuesta: {e}"}), 500
 
-    return jsonify({'response': assistant_message})
+    return jsonify({'response': assistant_message_content})
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
