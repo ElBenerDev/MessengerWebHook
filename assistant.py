@@ -194,8 +194,9 @@ def generate_response():
 
         logger.info(f"Mensaje generado por el asistente: {assistant_message['content']}")
 
-        assistant_message_content = assistant_message.get('content', '')  # Asegúrate de que esto obtenga el contenido correcto
-        
+        # Asegúrate de acceder al contenido correctamente
+        assistant_message_content = assistant_message['content'] if isinstance(assistant_message, dict) else ''
+
         if isinstance(assistant_message_content, str):
             if "start" in assistant_message_content.lower() and "end" in assistant_message_content.lower():
                 start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message_content)
