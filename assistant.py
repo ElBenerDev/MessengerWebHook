@@ -66,8 +66,9 @@ def create_event(start_time, end_time, summary):
 
 # Función para extraer fecha y hora del mensaje del usuario
 def extract_datetime(message):
-    # Expresión regular para detectar la fecha y hora
+    # Expresión regular para detectar la fecha
     date_pattern = r"(\d{1,2})\s*(de)?\s*(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s*(de)?\s*(\d{4})"
+    # Expresión regular para detectar la hora (AM/PM)
     time_pattern = r"(\d{1,2})(?:[:.])?(\d{2})?\s*(AM|PM|am|pm)?"
 
     # Buscar la fecha
@@ -110,6 +111,8 @@ def extract_datetime(message):
         print(f"Mensaje recibido: {message}")
         print("No se pudo extraer la fecha y hora con las expresiones regulares.")
         return None
+
+
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
