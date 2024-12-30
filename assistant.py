@@ -8,6 +8,8 @@ import pytz
 import os
 import logging
 import re
+import requests
+import json
 from typing_extensions import override
 
 # Configuración de logging
@@ -30,13 +32,52 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 SERVICE_ACCOUNT_FILE = '/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json'  # Asegúrate de que esta ruta sea correcta
 CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
+# Access Token de Mercado Pago (sandbox)
+access_token = 'APP_USR-5019818987249464-123000-1bb2908a2fd9a65dfaa42a8ad2c38b3a-2183981747'
+url = "https://api.mercadopago.com/checkout/preferences"
+
 # Funciones auxiliares para Google Calendar
 def build_service():
     """Crea y devuelve un servicio de Google Calendar."""
     credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     return build('calendar', 'v3', credentials=credentials)
 
-def create_event(start_time, end_time, summary):
+def create_payment_preference(amount):
+    """Crea una preferencia de pago en Mercado Pago."""
+    preference_data = {
+        "items": [
+            {
+                "title": "Cita en el Calendario",
+                "quantity": 1,
+                "currency_id": "ARS",
+                "unit_price": amount
+            }
+        ],
+        "back_urls": {
+            "success": "https://www.tusitio.com/success",
+            "failure": "https://www.tusitio.com/failure",
+            "pending": "https://www.tusitio.com/pending"
+        },
+        "auto_return": "approved"
+    }
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+
+    # Realizamos la solicitud POST para crear la preferencia
+    response = requests.post(url, data=json.dumps(preference_data), headers=headers)
+
+    if response.status_code == 201:
+        preference = response.json()
+        return preference["init_point"]  # Retornamos el link para redirigir al usuario
+    else:
+        logger.error("Error al crear la preferencia de pago:", response.json())
+        return None
+
+def create_event(start_time, end_time, summary, amount):
+    """Crea un evento en Google Calendar y genera una preferencia de pago en Mercado Pago."""
     try:
         service = build_service()
 
@@ -52,17 +93,27 @@ def create_event(start_time, end_time, summary):
             },
         }
 
+        # Crear el evento en Google Calendar
         event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
         logger.info(f'Evento creado: {event.get("htmlLink")}')
-        return event
+
+        # Crear la preferencia de pago en Mercado Pago
+        payment_url = create_payment_preference(amount)
+        
+        if payment_url:
+            # Devuelves el link de pago junto con la URL del evento
+            return {"event_url": event.get("htmlLink"), "payment_url": payment_url}
+        else:
+            return {"event_url": event.get("htmlLink"), "payment_url": None}
+
     except Exception as e:
         logger.error(f"Error al crear el evento: {e}")
         return None
 
 def delete_event(event_summary):
+    """Cancela un evento en Google Calendar."""
     try:
-        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-        service = build('calendar', 'v3', credentials=credentials)
+        service = build_service()
 
         # Listar eventos para encontrar el que coincida
         now = datetime.utcnow().isoformat() + 'Z'  # Hora actual en formato RFC3339
@@ -173,7 +224,22 @@ def generate_response():
                 start_datetime = convert_to_local_timezone(start_datetime)
                 end_datetime = convert_to_local_timezone(end_datetime)
 
-                create_event(start_datetime, end_datetime, "Cita prueba")
+                # Llamar a la función para crear el evento y obtener la URL del pago
+                payment_amount = 100.00  # Ejemplo: el costo de la cita es 100
+                result = create_event(start_datetime, end_datetime, "Cita prueba", payment_amount)
+
+                if result:
+                    event_url = result.get("event_url")
+                    payment_url = result.get("payment_url")
+                    if payment_url:
+                        return jsonify({
+                            'response': f'El evento fue creado exitosamente: {event_url}. Para completar el pago, por favor visita: {payment_url}'
+                        })
+                    else:
+                        return jsonify({
+                            'response': f'El evento fue creado exitosamente: {event_url}.'
+                        })
+
         elif "cancelar" in user_message.lower():
             summary_match = re.search(r'cita\s+(.*)', user_message.lower())
             if summary_match:
