@@ -3,7 +3,7 @@ from openai import OpenAI
 from openai import AssistantEventHandler
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 import os
 import logging
@@ -84,6 +84,16 @@ def delete_event(event_summary):
         logger.error(f"Error al eliminar el evento: {e}")
         return f"Hubo un error al intentar cancelar el evento: {e}"
 
+# Función para convertir fechas a la zona horaria local
+def convert_to_local_timezone(datetime_obj):
+    """Convierte la fecha y hora a la zona horaria local (Buenos Aires)"""
+    local_tz = pytz.timezone('America/Argentina/Buenos_Aires')
+    if datetime_obj.tzinfo is None:
+        datetime_obj = local_tz.localize(datetime_obj)  # Si es naive, localizamos
+    else:
+        datetime_obj = datetime_obj.astimezone(local_tz)  # Si ya tiene zona horaria, la convertimos
+    return datetime_obj
+
 # Procesamiento del asistente
 def extract_datetime_from_message(message):
     try:
@@ -159,12 +169,11 @@ def generate_response():
                 start_datetime = datetime.fromisoformat(start_datetime_str)
                 end_datetime = datetime.fromisoformat(end_datetime_str)
 
-                # Convertir a zona horaria de Buenos Aires
-                tz = pytz.timezone('America/Argentina/Buenos_Aires')
-                start_datetime = tz.localize(start_datetime)
-                end_datetime = tz.localize(end_datetime)
+                # Convertir las fechas a la zona horaria correcta
+                start_datetime = convert_to_local_timezone(start_datetime)
+                end_datetime = convert_to_local_timezone(end_datetime)
 
-                create_event(start_datetime, end_datetime, "Cita Prueba")
+                create_event(start_datetime, end_datetime, "Cita prueba")
         elif "cancelar" in user_message.lower():
             summary_match = re.search(r'cita\s+(.*)', user_message.lower())
             if summary_match:
