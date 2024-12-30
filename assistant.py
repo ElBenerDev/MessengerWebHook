@@ -60,26 +60,28 @@ def create_event(start_time, end_time, summary):
         logger.error(f"Error al crear el evento: {e}")
         return None
 
-def delete_event(summary):
-    """Busca y elimina un evento en Google Calendar por su resumen."""
+def delete_event(event_summary):
     try:
-        service = build_service()
-        events_result = service.events().list(calendarId=CALENDAR_ID, q=summary, singleEvents=True).execute()
+        credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+        service = build('calendar', 'v3', credentials=credentials)
+
+        # Listar eventos para encontrar el que coincida
+        now = datetime.utcnow().isoformat() + 'Z'  # Hora actual en formato RFC3339
+        events_result = service.events().list(calendarId=CALENDAR_ID, timeMin=now, singleEvents=True, orderBy='startTime').execute()
         events = events_result.get('items', [])
 
-        if not events:
-            logger.info("No se encontraron eventos para eliminar.")
-            return False
-
         for event in events:
-            event_id = event['id']
-            service.events().delete(calendarId=CALENDAR_ID, eventId=event_id).execute()
-            logger.info(f"Evento eliminado: {event.get('summary')}")
-
-        return True
+            if event['summary'].lower() == event_summary.lower():
+                service.events().delete(calendarId=CALENDAR_ID, eventId=event['id']).execute()
+                logger.info(f"Evento eliminado: {event_summary}")
+                return f"El evento '{event_summary}' ha sido cancelado con éxito."
+        
+        logger.warning(f"No se encontró el evento con el resumen: {event_summary}")
+        return f"No se encontró el evento '{event_summary}'."
     except Exception as e:
         logger.error(f"Error al eliminar el evento: {e}")
-        return False
+        return f"Hubo un error al intentar cancelar el evento: {e}"
+
 
 # Procesamiento del asistente
 
