@@ -4,9 +4,16 @@ import axios from 'axios';
 
 dotenv.config();
 
+const express = require('express');
 const app = express();
-const port = process.env.PORT || 3000;  // Usar el puerto de Render o 3000 si no está asignado
-const pythonServiceUrl = 'http://localhost:5000';
+
+// Usar el puerto asignado por Render o 3000 si no está definido
+const port = process.env.PORT || 3000;
+
+// Cambiar el puerto del servicio Python a usar el $PORT asignado o un puerto diferente si necesario
+// Ajusta esto si necesitas coordinar con el servicio Python en producción.
+const pythonServicePort = process.env.PYTHON_SERVICE_PORT || 5000;
+const pythonServiceUrl = `http://localhost:${pythonServicePort}`;
 
 
 app.use(express.json());
