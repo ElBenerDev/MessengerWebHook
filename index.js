@@ -42,6 +42,7 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     };
 
     try {
+        console.log("Enviando mensaje a WhatsApp:", payload); // Log del mensaje que se va a enviar
         const response = await axios.post(url, payload, {
             headers: {
                 'Content-Type': 'application/json',
@@ -55,8 +56,11 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     }
 }
 
+
 app.post('/webhook', async (req, res) => {
     try {
+        console.log('Webhook recibido:', req.body); // Log para ver el cuerpo completo del mensaje recibido
+
         if (!req.body || !req.body.entry || !Array.isArray(req.body.entry)) {
             console.error("Formato de payload inesperado:", JSON.stringify(req.body, null, 2));
             return res.sendStatus(400);
@@ -81,7 +85,7 @@ app.post('/webhook', async (req, res) => {
                     const receivedMessage = message.text.body;
                     const phoneNumberId = value.metadata.phone_number_id;
 
-                    console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
+                    console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`); // Log para verificar el mensaje
 
                     try {
                         const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
@@ -90,6 +94,7 @@ app.post('/webhook', async (req, res) => {
                         });
 
                         const assistantMessage = response.data.response;
+                        console.log("Respuesta generada por Python:", assistantMessage); // Verificar la respuesta del servicio Python
                         await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
                     } catch (error) {
                         console.error("Error al interactuar con el servicio Python:", error.message);
@@ -115,6 +120,7 @@ app.post('/webhook', async (req, res) => {
         res.sendStatus(500);
     }
 });
+
 
 app.get('/webhook', (req, res) => {
     const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;

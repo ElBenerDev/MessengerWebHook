@@ -157,6 +157,7 @@ def generate_response():
         assistant_message = event_handler.assistant_message
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
+        # Aquí ya has generado el mensaje, asegúrate de que lo estás enviando correctamente
         if "start" in assistant_message.lower() and "end" in assistant_message.lower():
             start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message)
 
@@ -181,6 +182,7 @@ def generate_response():
         return jsonify({'response': f"Error al generar respuesta: {e}"}), 500
 
     return jsonify({'response': assistant_message})
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))  # Usa el puerto de la variable de entorno o 5000 por defecto
