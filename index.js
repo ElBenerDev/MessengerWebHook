@@ -1,169 +1,169 @@
-import dotenv from 'dotenv';
-import express from 'express';
-import axios from 'axios';
-import cors from 'cors';
+    import dotenv from 'dotenv';
+    import express from 'express';
+    import axios from 'axios';
+    import cors from 'cors';
 
-dotenv.config();
+    dotenv.config();
 
-const app = express();
+    const app = express();
 
-// Puerto donde se ejecutará tu servidor Node.js
-const port = process.env.PORT || 5000;
+    // Puerto donde se ejecutará tu servidor Node.js
+    const port = process.env.PORT || 5000;
 
-// URL de tu servicio Python en Render
-const pythonServiceUrl = 'https://messengerwebhook.onrender.com';  // Definido directamente en el código
+    // URL de tu servicio Python en Render
+    const pythonServiceUrl = 'https://messengerwebhook.onrender.com';  // Definido directamente en el código
 
-console.log(`Python service URL: ${pythonServiceUrl}`);
-console.log(`Node.js server running on port: ${port}`);
+    console.log(`Python service URL: ${pythonServiceUrl}`);
+    console.log(`Node.js server running on port: ${port}`);
 
-app.use(cors());
+    app.use(cors());
 
-app.use(express.json());
+    app.use(express.json());
 
-// Función para enviar un mensaje a WhatsApp usando la API de WhatsApp de Facebook
-async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
-    const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+    // Función para enviar un mensaje a WhatsApp usando la API de WhatsApp de Facebook
+    async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
+        const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
-    if (!WHATSAPP_ACCESS_TOKEN) {
-        console.error("FACEBOOK_PAGE_ACCESS_TOKEN no está configurado en las variables de entorno.");
-        return;
-    }
-
-    const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
-
-    // Validar que el mensaje sea un string
-    if (typeof message !== 'string') {
-        console.warn("El mensaje no es un string. Intentando convertirlo...");
-        message = String(message || ""); // Convertir a string o usar un mensaje vacío
-    }
-
-    const payload = {
-        messaging_product: "whatsapp",
-        to: recipientId,
-        text: { body: message },
-    };
-
-    try {
-        console.log("Enviando mensaje a WhatsApp:", payload); // Log del mensaje que se va a enviar
-        const response = await axios.post(url, payload, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-            },
-        });
-        console.log(`Mensaje enviado a ${recipientId}: ${message}`);
-        console.log("Respuesta de WhatsApp:", response.data);
-    } catch (error) {
-        console.error("Error al enviar mensaje a WhatsApp:", error.response?.data || error.message);
-    }
-}
-
-// Endpoint webhook que recibe los mensajes de WhatsApp y llama a tu servicio Python
-app.post('/webhook', async (req, res) => {
-    try {
-        console.log('Webhook recibido:', req.body); // Log para ver el cuerpo completo del mensaje recibido
-
-        if (!req.body || !req.body.entry || !Array.isArray(req.body.entry)) {
-            console.error("Formato de payload inesperado:", JSON.stringify(req.body, null, 2));
-            return res.sendStatus(400);
+        if (!WHATSAPP_ACCESS_TOKEN) {
+            console.error("FACEBOOK_PAGE_ACCESS_TOKEN no está configurado en las variables de entorno.");
+            return;
         }
 
-        for (const entry of req.body.entry) {
-            if (!entry.changes || !Array.isArray(entry.changes)) {
-                console.error("El campo 'changes' no está presente o no es un array:", JSON.stringify(entry, null, 2));
-                continue;
+        const url = `https://graph.facebook.com/v12.0/${phoneNumberId}/messages`;
+
+        // Validar que el mensaje sea un string
+        if (typeof message !== 'string') {
+            console.warn("El mensaje no es un string. Intentando convertirlo...");
+            message = String(message || ""); // Convertir a string o usar un mensaje vacío
+        }
+
+        const payload = {
+            messaging_product: "whatsapp",
+            to: recipientId,
+            text: { body: message },
+        };
+
+        try {
+            console.log("Enviando mensaje a WhatsApp:", payload); // Log del mensaje que se va a enviar
+            const response = await axios.post(url, payload, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+                },
+            });
+            console.log(`Mensaje enviado a ${recipientId}: ${message}`);
+            console.log("Respuesta de WhatsApp:", response.data);
+        } catch (error) {
+            console.error("Error al enviar mensaje a WhatsApp:", error.response?.data || error.message);
+        }
+    }
+
+    // Endpoint webhook que recibe los mensajes de WhatsApp y llama a tu servicio Python
+    app.post('/webhook', async (req, res) => {
+        try {
+            console.log('Webhook recibido:', req.body); // Log para ver el cuerpo completo del mensaje recibido
+
+            if (!req.body || !req.body.entry || !Array.isArray(req.body.entry)) {
+                console.error("Formato de payload inesperado:", JSON.stringify(req.body, null, 2));
+                return res.sendStatus(400);
             }
 
-            for (const change of entry.changes) {
-                const value = change.value;
-                if (
-                    value &&
-                    value.messages &&
-                    Array.isArray(value.messages) &&
-                    value.messages[0].type === 'text'
-                ) {
-                    const message = value.messages[0];
-                    const senderId = message.from;
-                    const receivedMessage = message.text.body;
-                    const phoneNumberId = value.metadata.phone_number_id;
-
-                    // Verificar que el teléfono y el ID del mensaje son válidos
-                    if (!senderId || !phoneNumberId) {
-                        console.error("Faltan datos importantes del mensaje, como senderId o phoneNumberId");
-                        return res.sendStatus(400);
-                    }
-
-                    console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`); // Log para verificar el mensaje
-
-                    try {
-                        // Llamar al servicio Python para generar la respuesta
-                        const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
-                            message: receivedMessage,
-                            sender_id: senderId
-                        });
-
-                        // Verificar si la respuesta es válida
-                        if (response.data && response.data.response) {
-                            const assistantMessage = response.data.response;
-                            console.log("Respuesta generada por Python:", assistantMessage); // Verificar la respuesta del servicio Python
-
-                            // Enviar la respuesta generada a WhatsApp
-                            await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
-                        } else {
-                            console.error("Respuesta vacía o inválida del servicio Python");
-                            await sendMessageToWhatsApp(senderId, "Lo siento, no pude procesar tu mensaje. Intenta de nuevo.", phoneNumberId);
-                        }
-                    } catch (error) {
-                        console.error("Error al interactuar con el servicio Python:", error.message);
-                        if (senderId && phoneNumberId) {
-                            await sendMessageToWhatsApp(
-                                senderId,
-                                "Lo siento, hubo un problema al procesar tu mensaje.",
-                                phoneNumberId
-                            );
-                        }
-                    }
-                } else if (value && value.statuses) {
+            for (const entry of req.body.entry) {
+                if (!entry.changes || !Array.isArray(entry.changes)) {
+                    console.error("El campo 'changes' no está presente o no es un array:", JSON.stringify(entry, null, 2));
                     continue;
-                } else {
-                    console.log("Mensaje no procesable:", JSON.stringify(value, null, 2));
+                }
+
+                for (const change of entry.changes) {
+                    const value = change.value;
+                    if (
+                        value &&
+                        value.messages &&
+                        Array.isArray(value.messages) &&
+                        value.messages[0].type === 'text'
+                    ) {
+                        const message = value.messages[0];
+                        const senderId = message.from;
+                        const receivedMessage = message.text.body;
+                        const phoneNumberId = value.metadata.phone_number_id;
+
+                        // Verificar que el teléfono y el ID del mensaje son válidos
+                        if (!senderId || !phoneNumberId) {
+                            console.error("Faltan datos importantes del mensaje, como senderId o phoneNumberId");
+                            return res.sendStatus(400);
+                        }
+
+                        console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`); // Log para verificar el mensaje
+
+                        try {
+                            // Llamar al servicio Python para generar la respuesta
+                            const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
+                                message: receivedMessage,
+                                sender_id: senderId
+                            });
+
+                            // Verificar si la respuesta es válida
+                            if (response.data && response.data.response) {
+                                const assistantMessage = response.data.response;
+                                console.log("Respuesta generada por Python:", assistantMessage); // Verificar la respuesta del servicio Python
+
+                                // Enviar la respuesta generada a WhatsApp
+                                await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
+                            } else {
+                                console.error("Respuesta vacía o inválida del servicio Python");
+                                await sendMessageToWhatsApp(senderId, "Lo siento, no pude procesar tu mensaje. Intenta de nuevo.", phoneNumberId);
+                            }
+                        } catch (error) {
+                            console.error("Error al interactuar con el servicio Python:", error.message);
+                            if (senderId && phoneNumberId) {
+                                await sendMessageToWhatsApp(
+                                    senderId,
+                                    "Lo siento, hubo un problema al procesar tu mensaje.",
+                                    phoneNumberId
+                                );
+                            }
+                        }
+                    } else if (value && value.statuses) {
+                        continue;
+                    } else {
+                        console.log("Mensaje no procesable:", JSON.stringify(value, null, 2));
+                    }
                 }
             }
+
+            res.sendStatus(200);
+        } catch (error) {
+            console.error("Error general en el webhook:", error);
+            res.sendStatus(500);
         }
+    });
 
-        res.sendStatus(200);
-    } catch (error) {
-        console.error("Error general en el webhook:", error);
-        res.sendStatus(500);
-    }
-});
+    // Ruta para la verificación del webhook de Facebook
+    app.get('/webhook', (req, res) => {
+        const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
+        const mode = req.query['hub.mode'];
+        const token = req.query['hub.verify_token'];
+        const challenge = req.query['hub.challenge'];
 
-// Ruta para la verificación del webhook de Facebook
-app.get('/webhook', (req, res) => {
-    const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-
-    if (mode && token) {
-        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-            console.log('Webhook verificado');
-            res.status(200).send(challenge);
+        if (mode && token) {
+            if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+                console.log('Webhook verificado');
+                res.status(200).send(challenge);
+            } else {
+                console.error('Token de verificación incorrecto');
+                res.sendStatus(403);
+            }
         } else {
-            console.error('Token de verificación incorrecto');
-            res.sendStatus(403);
+            console.error('Solicitud de verificación incorrecta:', req.query);
+            res.sendStatus(400);
         }
-    } else {
-        console.error('Solicitud de verificación incorrecta:', req.query);
-        res.sendStatus(400);
-    }
-});
+    });
 
-app.get('/', (req, res) => {
-    res.send('El servidor está funcionando correctamente');
-});
+    app.get('/', (req, res) => {
+        res.send('El servidor está funcionando correctamente');
+    });
 
-// Iniciar el servidor Node.js
-app.listen(port, () => {
-    console.log(`Servidor escuchando en puerto ${port}`);
-});
+    // Iniciar el servidor Node.js
+    app.listen(port, () => {
+        console.log(`Servidor escuchando en puerto ${port}`);
+    });
