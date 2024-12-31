@@ -107,29 +107,27 @@ class EventHandler(AssistantEventHandler):
     def __init__(self):
         super().__init__()
         self.assistant_message = ""
-        self.final_message = ""
-        self.message_complete = False  # Nuevo flag para verificar si el mensaje ya está completo
+        self.message_complete = False
 
     @override
     def on_text_created(self, text) -> None:
         if not self.message_complete:
-            # Solo agregamos el texto si no es una repetición y si no hemos marcado el mensaje como completo
-            if text.value != self.final_message:
+            # Evitar cualquier acumulación redundante
+            if text.value not in self.assistant_message:
                 self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
         if not self.message_complete:
-            # Añadimos el delta solo si no es una repetición y si no hemos marcado el mensaje como completo
-            if delta.value != self.final_message:
+            # Solo agregar nuevo texto
+            if delta.value not in self.assistant_message:
                 self.assistant_message += delta.value
 
     def finalize_message(self):
-        # Aquí aseguramos que solo se guarde el mensaje final
         if not self.message_complete:
-            self.final_message = self.assistant_message
+            # Marcar mensaje como completo evita más cambios
             self.message_complete = True
-        return self.assistant_message
+        return self.assistant_message.strip()  # Elimina cualquier espacio adicional o duplicación potencial
 
 
 @app.route('/generate-response', methods=['POST'])
