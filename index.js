@@ -15,6 +15,8 @@ const pythonServiceUrl = 'https://messengerwebhook.onrender.com';  // Definido d
 console.log(`Python service URL: ${pythonServiceUrl}`);
 console.log(`Node.js server running on port: ${port}`);
 
+app.use(cors());
+
 app.use(express.json());
 
 // Función para enviar un mensaje a WhatsApp usando la API de WhatsApp de Facebook
