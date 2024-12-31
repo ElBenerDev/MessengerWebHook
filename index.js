@@ -7,13 +7,15 @@ dotenv.config();
 const express = require('express');
 const app = express();
 
-// Usar el puerto asignado por Render o 3000 si no está definido
+// Usar el puerto asignado por Render o 3000 como predeterminado
 const port = process.env.PORT || 3000;
 
-// Cambiar el puerto del servicio Python a usar el $PORT asignado o un puerto diferente si necesario
-// Ajusta esto si necesitas coordinar con el servicio Python en producción.
-const pythonServicePort = process.env.PYTHON_SERVICE_PORT || 5000;
-const pythonServiceUrl = `http://localhost:${pythonServicePort}`;
+// Usar la URL completa del servicio Python en producción
+// Render asigna dinámicamente los puertos, y los servicios internos deben comunicarse con URLs internas.
+// Asegúrate de que `PYTHON_SERVICE_URL` esté configurado en tus variables de entorno.
+const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || `http://localhost:5000`;
+
+console.log(`Using Python service at: ${pythonServiceUrl}`);
 
 
 app.use(express.json());
