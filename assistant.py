@@ -108,22 +108,27 @@ class EventHandler(AssistantEventHandler):
         super().__init__()
         self.assistant_message = ""
         self.final_message = ""
+        self.message_complete = False  # Nuevo flag para verificar si el mensaje ya está completo
 
     @override
     def on_text_created(self, text) -> None:
-        # Solo agregamos el texto si no es una repetición
-        if text.value != self.final_message:
-            self.assistant_message += text.value
+        if not self.message_complete:
+            # Solo agregamos el texto si no es una repetición y si no hemos marcado el mensaje como completo
+            if text.value != self.final_message:
+                self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
-        # Añadimos el delta solo si no es una repetición
-        if delta.value != self.final_message:
-            self.assistant_message += delta.value
+        if not self.message_complete:
+            # Añadimos el delta solo si no es una repetición y si no hemos marcado el mensaje como completo
+            if delta.value != self.final_message:
+                self.assistant_message += delta.value
 
     def finalize_message(self):
         # Aquí aseguramos que solo se guarde el mensaje final
-        self.final_message = self.assistant_message
+        if not self.message_complete:
+            self.final_message = self.assistant_message
+            self.message_complete = True
         return self.assistant_message
 
 
