@@ -10,7 +10,7 @@ const app = express();
 const port = process.env.NODE_PORT || 5000;
 
 // Usar la URL del servicio Python proporcionada por Render o una local en desarrollo
-const pythonServiceUrl = 'http://localhost:8080';
+const pythonServiceUrl = 'https://messengerwebhook.onrender.com';
 
 
 console.log(`Python service URL: ${pythonServiceUrl}`);
