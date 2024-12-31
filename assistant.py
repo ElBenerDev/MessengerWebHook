@@ -155,6 +155,7 @@ def generate_response():
                 start_datetime = datetime.fromisoformat(start_datetime_str)
                 end_datetime = datetime.fromisoformat(end_datetime_str)
 
+                # Extraer el contexto (descripción) del evento, si está disponible
                 context_match = re.search(r'descripción\*\*:\s*(.*)', assistant_message, re.IGNORECASE)
                 context = context_match.group(1).strip() if context_match else "Sin descripción"
 
@@ -190,6 +191,4 @@ def webhook_verification():
         return "Error, invalid token", 403
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 8081)))  # Usa 8081 si 8080 ya está ocupado
-
-
+    app.run(host='0.0.0.0', port=5000)

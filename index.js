@@ -5,13 +5,10 @@
 
     dotenv.config();
 
-    const app = express();
+   const app = express();
+   const port = process.env.PORT || 8080;
+   const pythonServiceUrl = 'http://localhost:5000';
 
-    // Puerto donde se ejecutará tu servidor Node.js    
-    const port = process.env.PORT || 5000;
-
-    // URL de tu servicio Python en Render
-    const pythonServiceUrl = 'https://messengerwebhook.onrender.com';  // Definido directamente en el código
 
     console.log(`Python service URL: ${pythonServiceUrl}`);
     console.log(`Node.js server running on port: ${port}`);
