@@ -173,21 +173,5 @@ def generate_response():
 
     return jsonify({'response': assistant_message})
 
-# Ruta para la verificación del webhook de Facebook
-@app.route('/webhook', methods=['GET'])
-def webhook_verification():
-    # Parámetros que Facebook enviará
-    mode = request.args.get('hub.mode')
-    token = request.args.get('hub.verify_token')
-    challenge = request.args.get('hub.challenge')
-
-    # Verificar el token
-    if mode == 'subscribe' and token == '12345':  # Cambia '12345' por tu token de verificación
-        logger.info("Verificación exitosa del webhook.")
-        return challenge  # Responder con el valor del challenge
-    else:
-        logger.error("Verificación fallida del webhook.")
-        return "Error, invalid token", 403
-
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
