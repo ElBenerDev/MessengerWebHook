@@ -135,7 +135,7 @@ def generate_response():
     data = request.json
     user_message = data.get('message')
     user_id = data.get('sender_id')
-    user_name = data.get('user_name', "Usuario")  # Nombre del cliente (título del evento)
+    user_name = data.get('user_name', "Usuario")  # Nombre del cliente
 
     if not user_message or not user_id:
         logger.error("No se proporcionó un mensaje o ID de usuario válido.")
@@ -144,6 +144,7 @@ def generate_response():
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
+        # Crear un nuevo thread para cada usuario si no existe
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             user_threads[user_id] = thread.id
@@ -158,35 +159,15 @@ def generate_response():
         ) as stream:
             stream.until_done()
 
-        assistant_message = event_handler.finalize_message()  # Asegura que el mensaje final esté listo
+        assistant_message = event_handler.finalize_message()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
-
-        # Aquí ya has generado el mensaje, asegúrate de que lo estás enviando correctamente
-        if "start" in assistant_message.lower() and "end" in assistant_message.lower():
-            start_datetime_str, end_datetime_str = extract_datetime_from_message(assistant_message)
-
-            if start_datetime_str and end_datetime_str:
-                start_datetime = datetime.fromisoformat(start_datetime_str)
-                end_datetime = datetime.fromisoformat(end_datetime_str)
-
-                # Extraer el contexto (descripción) del evento, si está disponible
-                context_match = re.search(r'descripción\*\*:\s*(.*)', assistant_message, re.IGNORECASE)
-                context = context_match.group(1).strip() if context_match else "Sin descripción"
-
-                create_event(start_datetime, end_datetime, user_name, context)
-
-        elif "cancelar" in user_message.lower():
-            summary_match = re.search(r'cita\s+(.*)', user_message.lower())
-            if summary_match:
-                summary = summary_match.group(1).strip()
-                response_message = delete_event(summary)
-                return jsonify({'response': response_message})
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {e}")
         return jsonify({'response': f"Error al generar respuesta: {e}"}), 500
 
     return jsonify({'response': assistant_message})
+
 
 # Ruta para la verificación del webhook de Facebook
 @app.route('/webhook', methods=['GET'])
