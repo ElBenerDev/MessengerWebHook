@@ -4,18 +4,16 @@ import axios from 'axios';
 
 dotenv.config();
 
-const express = require('express');
 const app = express();
 
 // Node.js usa un puerto interno diferente, como 5000
 const port = process.env.NODE_PORT || 5000;
 
 // Usar la URL del servicio Python proporcionada por Render o una local en desarrollo
-const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5000';
+const pythonServiceUrl = 'http://localhost:5001';
 
 console.log(`Python service URL: ${pythonServiceUrl}`);
 console.log(`Node.js server running on port: ${port}`);
-
 
 app.use(express.json());
 
@@ -55,7 +53,6 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
         console.error("Error al enviar mensaje a WhatsApp:", error.response?.data || error.message);
     }
 }
-
 
 app.post('/webhook', async (req, res) => {
     try {
@@ -120,7 +117,6 @@ app.post('/webhook', async (req, res) => {
         res.sendStatus(500);
     }
 });
-
 
 app.get('/webhook', (req, res) => {
     const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
