@@ -6,17 +6,18 @@ dotenv.config();
 
 const app = express();
 
-// Node.js usa un puerto interno diferente, como 5000
+// Puerto donde se ejecutará tu servidor Node.js
 const port = process.env.NODE_PORT || 5000;
 
-// Usar la URL del servicio Python proporcionada por Render o una local en desarrollo
-const pythonServiceUrl = 'https://messengerwebhook.onrender.com';
+// URL de tu servicio Python en Render
+const pythonServiceUrl = 'https://messengerwebhook.onrender.com';  // Definido directamente en el código
 
 console.log(`Python service URL: ${pythonServiceUrl}`);
 console.log(`Node.js server running on port: ${port}`);
 
 app.use(express.json());
 
+// Función para enviar un mensaje a WhatsApp usando la API de WhatsApp de Facebook
 async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     const WHATSAPP_ACCESS_TOKEN = process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
 
@@ -54,6 +55,7 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     }
 }
 
+// Endpoint webhook que recibe los mensajes de WhatsApp y llama a tu servicio Python
 app.post('/webhook', async (req, res) => {
     try {
         console.log('Webhook recibido:', req.body); // Log para ver el cuerpo completo del mensaje recibido
@@ -127,6 +129,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// Ruta para la verificación del webhook de Facebook
 app.get('/webhook', (req, res) => {
     const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
     const mode = req.query['hub.mode'];
@@ -147,6 +150,7 @@ app.get('/webhook', (req, res) => {
     }
 });
 
+// Iniciar el servidor Node.js
 app.listen(port, () => {
     console.log(`Servidor escuchando en puerto ${port}`);
 });
