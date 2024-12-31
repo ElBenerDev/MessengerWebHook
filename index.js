@@ -6,7 +6,10 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
-const pythonServiceUrl = 'http://localhost:5000';
+const pythonServiceUrl = process.env.PYTHON_SERVICE_URL || 'http://localhost:5000';  // Cambia localhost a la URL de producción
+
+
+
 
 app.use(express.json());
 
