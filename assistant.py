@@ -135,17 +135,7 @@ def generate_response():
             user_threads[user_id] = thread.id
         thread_id = user_threads[user_id]
 
-        # Verificar si el hilo está activo
-        if client.beta.threads.runs.active(thread_id):
-            logger.info("Esperando a que el hilo actual termine.")
-            client.beta.threads.runs.wait_until_done(thread_id)
-
-        client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
-
+        # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=thread_id,
@@ -183,4 +173,5 @@ def generate_response():
 
     return jsonify({'response': assistant_message})
 
-
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
