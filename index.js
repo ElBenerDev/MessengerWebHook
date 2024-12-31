@@ -8,7 +8,7 @@ dotenv.config();
 const app = express();
 
 // Puerto donde se ejecutará tu servidor Node.js
-const port = process.env.NODE_PORT || 5000;
+const port = process.env.PORT || 5000;
 
 // URL de tu servicio Python en Render
 const pythonServiceUrl = 'https://messengerwebhook.onrender.com';  // Definido directamente en el código
