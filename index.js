@@ -84,6 +84,12 @@ app.post('/webhook', async (req, res) => {
                     const receivedMessage = message.text.body;
                     const phoneNumberId = value.metadata.phone_number_id;
 
+                    // Verificar que el teléfono y el ID del mensaje son válidos
+                    if (!senderId || !phoneNumberId) {
+                        console.error("Faltan datos importantes del mensaje, como senderId o phoneNumberId");
+                        return res.sendStatus(400);
+                    }
+
                     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`); // Log para verificar el mensaje
 
                     try {
