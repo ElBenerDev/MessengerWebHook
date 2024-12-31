@@ -12,7 +12,6 @@ const port = process.env.NODE_PORT || 5000;
 // Usar la URL del servicio Python proporcionada por Render o una local en desarrollo
 const pythonServiceUrl = 'https://messengerwebhook.onrender.com';
 
-
 console.log(`Python service URL: ${pythonServiceUrl}`);
 console.log(`Node.js server running on port: ${port}`);
 
@@ -86,14 +85,23 @@ app.post('/webhook', async (req, res) => {
                     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`); // Log para verificar el mensaje
 
                     try {
+                        // Llamar al servicio Python para generar la respuesta
                         const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
                             message: receivedMessage,
                             sender_id: senderId
                         });
 
-                        const assistantMessage = response.data.response;
-                        console.log("Respuesta generada por Python:", assistantMessage); // Verificar la respuesta del servicio Python
-                        await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
+                        // Verificar si la respuesta es válida
+                        if (response.data && response.data.response) {
+                            const assistantMessage = response.data.response;
+                            console.log("Respuesta generada por Python:", assistantMessage); // Verificar la respuesta del servicio Python
+
+                            // Enviar la respuesta generada a WhatsApp
+                            await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
+                        } else {
+                            console.error("Respuesta vacía o inválida del servicio Python");
+                            await sendMessageToWhatsApp(senderId, "Lo siento, no pude procesar tu mensaje. Intenta de nuevo.", phoneNumberId);
+                        }
                     } catch (error) {
                         console.error("Error al interactuar con el servicio Python:", error.message);
                         if (senderId && phoneNumberId) {
