@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import axios from 'axios';
+import cors from 'cors';
 
 dotenv.config();
 
@@ -156,6 +157,10 @@ app.get('/webhook', (req, res) => {
         console.error('Solicitud de verificación incorrecta:', req.query);
         res.sendStatus(400);
     }
+});
+
+app.get('/', (req, res) => {
+    res.send('El servidor está funcionando correctamente');
 });
 
 // Iniciar el servidor Node.js
