@@ -155,7 +155,7 @@ def generate_response():
         ) as stream:
             stream.until_done()
 
-        assistant_message = event_handler.assistant_message
+        assistant_message = event_handler.finalize_message()  # Asegura que el mensaje final esté listo
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
         # Aquí ya has generado el mensaje, asegúrate de que lo estás enviando correctamente
