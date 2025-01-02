@@ -7,7 +7,7 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
-const pythonServiceUrl = 'http://localhost:5000'; // Se mantiene la URL base del servicio Python
+const pythonServiceUrl = 'http://localhost:5000';
 
 console.log(`Python service URL: ${pythonServiceUrl}`);
 console.log(`Node.js server running on port: ${port}`);
@@ -52,7 +52,7 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     }
 }
 
-// Endpoint webhook que recibe los mensajes de WhatsApp y llama al servicio App
+// Endpoint webhook que recibe los mensajes de WhatsApp y llama a tu servicio Python
 app.post('/webhook', async (req, res) => {
     try {
         console.log('Webhook recibido:', req.body);
@@ -91,11 +91,11 @@ app.post('/webhook', async (req, res) => {
                         });
 
                         const assistantMessage = response.data?.response || "Lo siento, no pude procesar tu mensaje.";
-                        console.log("Respuesta generada por el servicio App:", assistantMessage);
+                        console.log("Respuesta generada por Python:", assistantMessage);
 
                         await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
                     } catch (error) {
-                        console.error("Error al interactuar con el servicio App:", error.message);
+                        console.error("Error al interactuar con el servicio Python:", error.message);
                         await sendMessageToWhatsApp(senderId, "Hubo un problema al procesar tu mensaje.", phoneNumberId);
                     }
                 } else if (value?.statuses) {
