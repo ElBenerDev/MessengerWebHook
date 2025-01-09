@@ -77,12 +77,10 @@ def handle_assistant_response(user_message, user_id):
             start_time = datetime(2025, 1, 10, 14, 0)  # Fechas del ejemplo
             end_time = datetime(2025, 1, 10, 15, 0)
             summary = "Proyecto"
-            description = "Discutir sobre el proyecto"
-            attendees = [{"email": "bernardoraos90@gmail.com"}]
-            reminders = [{"method": "email", "minutes": 10}]  # Ejemplo de recordatorio
+            
 
             try:
-                event = create_event(start_time, end_time, summary, description, attendees, reminders)
+                event = create_event(start_time, end_time, summary)
                 logger.info(f"Evento creado con éxito: {event.get('htmlLink')}")
                 return f"Evento creado con éxito: {event.get('htmlLink')}", None
             except Exception as e:
