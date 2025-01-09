@@ -32,6 +32,7 @@ def create_event(start_time, end_time, summary, description=None, reminders=None
             'end': {'dateTime': end_time.isoformat(), 'timeZone': 'America/Argentina/Buenos_Aires'},
             'reminders': {'useDefault': False, 'overrides': reminders or []}
         }
+        # Crear el evento sin asistentes
         event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
         logging.info(f"Evento creado: {event.get('htmlLink')}")
         return event
@@ -63,7 +64,7 @@ def handle_event_creation(user_message, user_phone):
         start_time = datetime(2025, 1, 10, 14, 0)  # 10 de enero de 2025, 2:00 PM
         end_time = start_time + timedelta(hours=1)
         summary = 'Proyecto'
-        description = 'Descripción del proyecto'
+        description = 'Junta de avances'
         reminders = [{'method': 'popup', 'minutes': 10}]  # Recordatorio 10 minutos antes
 
         # Crear el evento en Google Calendar sin asistentes
