@@ -4,7 +4,7 @@ from typing_extensions import override
 import os
 import logging
 from google_calendar_utils import create_event  # Asegúrate de que esta función esté importada correctamente
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -69,13 +69,15 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Si el mensaje es "Es correcto", creamos el evento en Google Calendar
-        if "es correcto" in assistant_message.lower():
+        # Si el mensaje es "Correcto", creamos el evento en Google Calendar
+        if "correcto" in assistant_message.lower():
+            logger.info("Confirmación de creación de evento recibida. Creando evento en Google Calendar...")
+
             # Datos del evento para crear
             start_time = datetime(2025, 1, 10, 14, 0)  # Fechas del ejemplo
             end_time = datetime(2025, 1, 10, 15, 0)
-            summary = "Junta de trabajo"
-            description = "Discutir sobre los activos de la empresa"
+            summary = "Proyecto"
+            description = "Discutir sobre el proyecto"
             attendees = [{"email": "bernardoraos90@gmail.com"}]
             reminders = [{"method": "email", "minutes": 10}]  # Ejemplo de recordatorio
 
