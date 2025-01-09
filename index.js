@@ -84,6 +84,12 @@ app.post('/webhook', async (req, res) => {
 
                     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
 
+                    // Log para verificar los datos enviados al servicio Python
+                    console.log("Datos enviados al servicio Python:", {
+                        message: receivedMessage,
+                        sender_id: senderId
+                    });
+
                     try {
                         const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
                             message: receivedMessage,
