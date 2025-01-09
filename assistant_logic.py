@@ -3,6 +3,8 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import os
 import logging
+from google_calendar_utils import create_event  # Asegúrate de que esta función sea importada correctamente
+from datetime import datetime
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -25,36 +27,53 @@ class EventHandler(AssistantEventHandler):
 
     @override
     def on_text_created(self, text) -> None:
-        # Al recibir texto del asistente, lo acumulamos y lo mostramos
         logger.debug(f"Asistente: {text.value}")
         self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
-        # Maneja las actualizaciones parciales del mensaje
         logger.debug(f"Delta: {delta.value}")
         self.assistant_message += delta.value
+
+def parse_event_details(assistant_message):
+    """
+    Extrae los detalles del evento del mensaje del asistente.
+    Retorna un diccionario con los datos del evento o None si falta información clave.
+    """
+    try:
+        # Aquí puedes ajustar la lógica de extracción según el formato de los mensajes generados
+        lines = assistant_message.split("\n")
+        title = next(line.split(":")[1].strip() for line in lines if "Título" in line)
+        start = next(line.split(":")[1].strip() for line in lines if "Fecha y hora de inicio" in line)
+        end = next(line.split(":")[1].strip() for line in lines if "Fecha y hora de finalización" in line)
+
+        # Convertir las fechas a objetos datetime
+        start_datetime = datetime.strptime(start, "%d de %B de %Y a las %I:%M %p")
+        end_datetime = datetime.strptime(end, "%d de %B de %Y a las %I:%M %p")
+
+        return {
+            "summary": title,
+            "start_time": start_datetime,
+            "end_time": end_datetime,
+        }
+    except Exception as e:
+        logger.error(f"Error al extraer detalles del evento: {str(e)}")
+        return None
 
 def handle_assistant_response(user_message, user_id):
     """ Maneja la respuesta del asistente de OpenAI. """
     try:
-        # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
-            # Crear un nuevo hilo de conversación si no existe
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
-        else:
-            thread_id = user_threads[user_id]
 
-        # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
             role="user",
             content=user_message
         )
 
-        # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
@@ -63,9 +82,23 @@ def handle_assistant_response(user_message, user_id):
         ) as stream:
             stream.until_done()
 
-        # Obtener el mensaje generado por el asistente
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+
+        # Intentar extraer detalles del evento
+        event_details = parse_event_details(assistant_message)
+        if event_details:
+            # Crear el evento en Google Calendar
+            created_event = create_event(
+                start_time=event_details["start_time"],
+                end_time=event_details["end_time"],
+                summary=event_details["summary"]
+            )
+            logger.info(f"Evento creado: {created_event.get('htmlLink')}")
+            assistant_message += f"\n\nEl evento ha sido creado con éxito: {created_event.get('htmlLink')}"
+        else:
+            logger.info("No se detectaron detalles de evento en el mensaje del asistente.")
+
         return assistant_message, None
 
     except Exception as e:
