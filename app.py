@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import os
+from assistant_logic import handle_assistant_response  # Aquí importa la función que maneja la lógica del asistente
 
 app = Flask(__name__)
 
@@ -7,17 +8,21 @@ app = Flask(__name__)
 def generate_response():
     try:
         data = request.json
-        print(f"Datos recibidos en Python: {data}")  # Añadir log aquí
+        print(f"Datos recibidos en Python: {data}")
 
-        message = data.get('message', '')
-        sender_id = data.get('sender_id', '')
+        user_message = data.get('message', '')
+        user_id = data.get('sender_id', '')
 
-        if not message or not sender_id:
+        if not user_message or not user_id:
             return jsonify({"error": "Missing parameters"}), 400
 
-        # Aquí va la lógica para generar la respuesta
-        response = f"Respuesta generada para el mensaje: '{message}'"
-        return jsonify({"response": response})
+        # Llamar a la lógica del asistente
+        assistant_message, error = handle_assistant_response(user_message, user_id)
+
+        if error:
+            return jsonify({"error": error}), 500
+
+        return jsonify({"response": assistant_message})
 
     except Exception as e:
         print(f"Error: {str(e)}")
