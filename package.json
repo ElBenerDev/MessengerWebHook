@@ -4,7 +4,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "concurrently \"node index.js\" \"python assistant.py\""
+    "start": "concurrently \"node index.js\" \"python app.py\""
 
   },
   "dependencies": {
