@@ -7,7 +7,7 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
-const pythonServiceUrl = 'http://localhost:5000'; // Se mantiene la URL base del servicio Python
+const pythonServiceUrl = 'http://localhost:5000'; // URL del servicio Python
 
 console.log(`Python service URL: ${pythonServiceUrl}`);
 console.log(`Node.js server running on port: ${port}`);
@@ -52,7 +52,7 @@ async function sendMessageToWhatsApp(recipientId, message, phoneNumberId) {
     }
 }
 
-// Endpoint webhook que recibe los mensajes de WhatsApp y llama al servicio App
+// Endpoint webhook que recibe los mensajes de WhatsApp y llama al servicio Python
 app.post('/webhook', async (req, res) => {
     try {
         console.log('Webhook recibido:', req.body);
@@ -83,17 +83,16 @@ app.post('/webhook', async (req, res) => {
                     }
 
                     console.log(`Mensaje recibido de ${senderId}: ${receivedMessage}`);
-
-                    // Log para verificar los datos enviados al servicio Python
-                    console.log("Datos enviados al servicio Python:", {
-                        message: receivedMessage,
-                        sender_id: senderId
-                    });
+                    console.log('Datos enviados al servicio Python:', { message: receivedMessage, sender_id: senderId });
 
                     try {
                         const response = await axios.post(`${pythonServiceUrl}/generate-response`, {
                             message: receivedMessage,
                             sender_id: senderId
+                        }, {
+                            headers: {
+                                'Content-Type': 'application/json'
+                            }
                         });
 
                         const assistantMessage = response.data?.response || "Lo siento, no pude procesar tu mensaje.";
@@ -101,7 +100,7 @@ app.post('/webhook', async (req, res) => {
 
                         await sendMessageToWhatsApp(senderId, assistantMessage, phoneNumberId);
                     } catch (error) {
-                        console.error("Error al interactuar con el servicio App:", error.message);
+                        console.error("Error al interactuar con el servicio Python:", error.message);
                         await sendMessageToWhatsApp(senderId, "Hubo un problema al procesar tu mensaje.", phoneNumberId);
                     }
                 } else if (value?.statuses) {
