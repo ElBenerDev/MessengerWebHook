@@ -21,9 +21,11 @@ class EventHandler(AssistantEventHandler):
         self.assistant_message = ""
 
     def on_text_created(self, text):
+        # Concatenar el texto de forma más limpia
         self.assistant_message += text.value
 
     def on_text_delta(self, delta, snapshot):
+        # Concatenar el texto de forma más limpia
         self.assistant_message += delta.value
 
 def handle_assistant_response(user_message, user_id):
@@ -47,10 +49,32 @@ def handle_assistant_response(user_message, user_id):
         ) as stream:
             stream.until_done()
 
+        # Asegurarnos de que el mensaje generado esté completo y bien formado
         assistant_message = event_handler.assistant_message.strip()
+
+        # Aquí podemos hacer un post-procesamiento del mensaje para asegurar que esté bien estructurado
+        assistant_message = format_response(assistant_message)
+
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
         return assistant_message, None
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {e}")
         return None, f"Error al generar respuesta: {e}"
+
+def format_response(response):
+    """
+    Función que formatea la respuesta generada por el asistente, asegurando
+    que la respuesta esté bien estructurada y no tenga fragmentos extraños.
+    """
+    # Ejemplo de post-procesamiento: eliminar espacios extra, corregir errores comunes, etc.
+    response = response.strip()  # Elimina espacios extra al principio y final
+    response = response.replace("  ", " ")  # Elimina dobles espacios
+
+    # Otras correcciones pueden ir aquí según lo que observes en las respuestas del modelo.
+    
+    # Asegurarnos de que el asistente proporcione una respuesta clara
+    if not response.endswith("."):
+        response += "."
+    
+    return response
