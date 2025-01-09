@@ -21,8 +21,8 @@ def build_service():
     )
     return build('calendar', 'v3', credentials=credentials)
 
-def create_event(start_time, end_time, summary, description=None, attendees=None, reminders=None):
-    """Crea un evento en Google Calendar."""
+def create_event(start_time, end_time, summary, description=None, reminders=None):
+    """Crea un evento en Google Calendar sin asistentes."""
     try:
         service = build_service()
         event = {
@@ -30,7 +30,6 @@ def create_event(start_time, end_time, summary, description=None, attendees=None
             'description': description,
             'start': {'dateTime': start_time.isoformat(), 'timeZone': 'America/Argentina/Buenos_Aires'},
             'end': {'dateTime': end_time.isoformat(), 'timeZone': 'America/Argentina/Buenos_Aires'},
-            'attendees': attendees or [],
             'reminders': {'useDefault': False, 'overrides': reminders or []}
         }
         event = service.events().insert(calendarId=CALENDAR_ID, body=event).execute()
@@ -65,12 +64,11 @@ def handle_event_creation(user_message, user_phone):
         end_time = start_time + timedelta(hours=1)
         summary = 'Proyecto'
         description = 'Descripción del proyecto'
-        attendees = []  # Lista de asistentes (si los hay)
         reminders = [{'method': 'popup', 'minutes': 10}]  # Recordatorio 10 minutos antes
 
-        # Crear el evento en Google Calendar
+        # Crear el evento en Google Calendar sin asistentes
         try:
-            event = create_event(start_time, end_time, summary, description, attendees, reminders)
+            event = create_event(start_time, end_time, summary, description, reminders)
             event_link = event.get('htmlLink')  # Obtener el link del evento creado
 
             # Enviar la confirmación por WhatsApp
