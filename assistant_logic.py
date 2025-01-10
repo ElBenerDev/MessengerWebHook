@@ -4,7 +4,7 @@ from typing_extensions import override
 import os
 import logging
 from google_calendar_utils import create_event  # Asegúrate de que esta función esté importada correctamente
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 
 # Configuración de logging
@@ -36,24 +36,25 @@ class EventHandler(AssistantEventHandler):
         logger.debug(f"Delta: {delta.value}")
         self.assistant_message += delta.value
 
+
 def parse_datetime_from_user_message(user_message):
     """ Extrae fecha, hora de inicio y hora de fin de un mensaje del usuario. """
-    # Usar expresiones regulares para encontrar fechas y horas en el mensaje
     date_pattern = r"\b(\d{4}-\d{2}-\d{2})\b"  # Formato de fecha YYYY-MM-DD
-    time_pattern = r"\b(\d{2}:\d{2})\b"        # Formato de hora HH:MM
+    time_pattern = r"\b(\d{1,2}:\d{2}\s*(AM|PM)?)\b"  # Formato de hora HH:MM AM/PM
 
     dates = re.findall(date_pattern, user_message)
     times = re.findall(time_pattern, user_message)
 
     if dates and len(times) >= 2:  # Necesitamos al menos una fecha y dos horas
         start_date = dates[0]
-        start_time = times[0]
-        end_time = times[1]
-        start_datetime = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M")
-        end_datetime = datetime.strptime(f"{start_date} {end_time}", "%Y-%m-%d %H:%M")
+        start_time = times[0][0]
+        end_time = times[1][0]
+        start_datetime = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %I:%M %p")
+        end_datetime = datetime.strptime(f"{start_date} {end_time}", "%Y-%m-%d %I:%M %p")
         return start_datetime, end_datetime
 
     return None, None
+
 
 def handle_assistant_response(user_message, user_id):
     """ Maneja la respuesta del asistente de OpenAI. """
@@ -83,23 +84,32 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Intentar extraer fecha y hora del mensaje del usuario
-        start_time, end_time = parse_datetime_from_user_message(user_message)
-        if not start_time or not end_time:
-            return (
-                "No pude entender las fechas y horas del evento. Por favor, proporciona el formato YYYY-MM-DD HH:MM.",
-                None,
-            )
+        # Interpretar intención del usuario de forma conversacional
+        if "crear" in user_message.lower():
+            if "fecha" in user_message.lower() or "hora" in user_message.lower():
+                start_time, end_time = parse_datetime_from_user_message(user_message)
+                if not start_time or not end_time:
+                    return (
+                        "No pude entender las fechas y horas del evento. Por favor, proporciona el formato YYYY-MM-DD HH:MM.",
+                        None,
+                    )
 
-        # Crear el evento con la información proporcionada
-        summary = "Evento del asistente"
-        try:
-            event = create_event(start_time, end_time, summary)
-            logger.info(f"Evento creado con éxito: {event.get('htmlLink')}")
-            return f"Evento creado con éxito: {event.get('htmlLink')}", None
-        except Exception as e:
-            logger.error(f"Error al crear el evento: {e}")
-            return None, str(e)
+                summary = "Evento del asistente"
+                try:
+                    event = create_event(start_time, end_time, summary)
+                    logger.info(f"Evento creado con éxito: {event.get('htmlLink')}")
+                    return f"¡Evento creado con éxito! Aquí tienes el enlace: {event.get('htmlLink')}", None
+                except Exception as e:
+                    logger.error(f"Error al crear el evento: {e}")
+                    return None, str(e)
+            else:
+                return "¿Cuál es el título del evento y cuándo será? Por favor, dame los detalles.", None
+
+        # Respuesta genérica si no se entiende el mensaje
+        return (
+            "No entendí tu solicitud. Por favor, dime si quieres crear, consultar o eliminar un evento.",
+            None,
+        )
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
