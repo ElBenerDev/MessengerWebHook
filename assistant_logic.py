@@ -3,24 +3,22 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import os
 import logging
-from google_calendar_utils import create_event  # Asegúrate de que esta función esté importada correctamente
-from datetime import datetime, timedelta
+from datetime import datetime
+from googleapiclient.errors import HttpError
+from google_calendar_utils import create_event  # Este es tu módulo para Google Calendar
 import re
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configura tu cliente con la API key desde el entorno
+# Configura tu cliente OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# ID del asistente
 assistant_id = os.getenv("ASSISTANT_ID", "asst_d2QBbmcrr6vdZgxusPdqNOtY")
 
 # Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
 
-# Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
         super().__init__()
@@ -37,42 +35,51 @@ class EventHandler(AssistantEventHandler):
         self.assistant_message += delta.value
 
 
-def parse_datetime_from_user_message(user_message):
-    """ Extrae fecha, hora de inicio y hora de fin de un mensaje del usuario. """
-    date_pattern = r"\b(\d{4}-\d{2}-\d{2})\b"  # Formato de fecha YYYY-MM-DD
-    time_pattern = r"\b(\d{1,2}:\d{2}\s*(AM|PM)?)\b"  # Formato de hora HH:MM AM/PM
+def extract_event_details(message):
+    """Extrae detalles de un evento desde un mensaje del usuario."""
+    try:
+        # Patrón para fechas y horas
+        date_pattern = r"\b(\d{4}-\d{2}-\d{2})\b"
+        time_pattern = r"\b(\d{2}:\d{2})\b"
+        summary_pattern = r"título[:]? (.+?)(,|$)"
 
-    dates = re.findall(date_pattern, user_message)
-    times = re.findall(time_pattern, user_message)
+        dates = re.findall(date_pattern, message)
+        times = re.findall(time_pattern, message)
+        summary_match = re.search(summary_pattern, message, re.IGNORECASE)
 
-    if dates and len(times) >= 2:  # Necesitamos al menos una fecha y dos horas
+        if not dates or len(times) < 2 or not summary_match:
+            raise ValueError("Faltan datos clave para el evento.")
+
         start_date = dates[0]
-        start_time = times[0][0]
-        end_time = times[1][0]
-        start_datetime = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %I:%M %p")
-        end_datetime = datetime.strptime(f"{start_date} {end_time}", "%Y-%m-%d %I:%M %p")
-        return start_datetime, end_datetime
+        start_time = times[0]
+        end_time = times[1]
+        summary = summary_match.group(1).strip()
 
-    return None, None
+        start_datetime = datetime.fromisoformat(f"{start_date}T{start_time}")
+        end_datetime = datetime.fromisoformat(f"{start_date}T{end_time}")
+
+        return start_datetime, end_datetime, summary
+    except Exception as e:
+        logger.error(f"Error al extraer detalles del evento: {e}")
+        return None, None, None
 
 
 def handle_assistant_response(user_message, user_id):
-    """ Maneja la respuesta del asistente de OpenAI. """
+    """Maneja la interacción del usuario con el asistente y Google Calendar."""
     try:
-        # Verificar si ya existe un thread_id para este usuario
+        # Crear o usar el hilo del usuario
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
 
-        # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
             role="user",
             content=user_message
         )
 
-        # Crear y manejar la respuesta del asistente
+        # Manejar respuesta del asistente
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
@@ -82,35 +89,21 @@ def handle_assistant_response(user_message, user_id):
             stream.until_done()
 
         assistant_message = event_handler.assistant_message.strip()
-        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+        logger.info(f"Respuesta del asistente: {assistant_message}")
 
-        # Interpretar intención del usuario de forma conversacional
-        if "crear" in user_message.lower():
-            if "fecha" in user_message.lower() or "hora" in user_message.lower():
-                start_time, end_time = parse_datetime_from_user_message(user_message)
-                if not start_time or not end_time:
-                    return (
-                        "No pude entender las fechas y horas del evento. Por favor, proporciona el formato YYYY-MM-DD HH:MM.",
-                        None,
-                    )
+        # Intentar extraer detalles del evento
+        start_time, end_time, summary = extract_event_details(user_message)
 
-                summary = "Evento del asistente"
-                try:
-                    event = create_event(start_time, end_time, summary)
-                    logger.info(f"Evento creado con éxito: {event.get('htmlLink')}")
-                    return f"¡Evento creado con éxito! Aquí tienes el enlace: {event.get('htmlLink')}", None
-                except Exception as e:
-                    logger.error(f"Error al crear el evento: {e}")
-                    return None, str(e)
-            else:
-                return "¿Cuál es el título del evento y cuándo será? Por favor, dame los detalles.", None
+        if start_time and end_time and summary:
+            try:
+                event = create_event(start_time, end_time, summary)
+                return f"Evento creado exitosamente: {event.get('htmlLink')}", None
+            except HttpError as e:
+                logger.error(f"Error al crear el evento en Google Calendar: {e}")
+                return None, f"Error al crear el evento en Google Calendar: {e}"
 
-        # Respuesta genérica si no se entiende el mensaje
-        return (
-            "No entendí tu solicitud. Por favor, dime si quieres crear, consultar o eliminar un evento.",
-            None,
-        )
+        return assistant_message, None
 
     except Exception as e:
-        logger.error(f"Error al generar respuesta: {str(e)}")
+        logger.error(f"Error general en el manejo de la respuesta: {e}")
         return None, str(e)
