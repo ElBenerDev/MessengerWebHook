@@ -5,7 +5,6 @@ import os
 import logging
 from google_calendar_utils import create_event  # Asegúrate de que esta función esté importada correctamente
 from datetime import datetime, timedelta
-import re
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -28,13 +27,11 @@ class EventHandler(AssistantEventHandler):
 
     @override
     def on_text_created(self, text) -> None:
-        # Al recibir texto del asistente, lo acumulamos y lo mostramos
         logger.debug(f"Asistente: {text.value}")
         self.assistant_message += text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
-        # Maneja las actualizaciones parciales del mensaje
         logger.debug(f"Delta: {delta.value}")
         self.assistant_message += delta.value
 
@@ -44,6 +41,7 @@ def handle_assistant_response(user_message, user_id):
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
             thread = client.beta.threads.create()
+            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
 
         # Enviar el mensaje del usuario al hilo existente
@@ -63,24 +61,27 @@ def handle_assistant_response(user_message, user_id):
             stream.until_done()
 
         assistant_message = event_handler.assistant_message.strip()
+        logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Buscar fecha y hora en el mensaje del usuario
-        datetime_pattern = r'(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})'
-        match = re.search(datetime_pattern, user_message)
-        if match:
-            date_str, time_str = match.groups()
-            start_time = datetime.strptime(f"{date_str} {time_str}", '%Y-%m-%d %H:%M')
-            end_time = start_time + timedelta(hours=1)  # Duración predeterminada de 1 hora
-            summary = "Evento desde Asistente"
+        # Si el mensaje es "Correcto", creamos el evento en Google Calendar
+        if "correcto" in assistant_message.lower():
+            logger.info("Confirmación de creación de evento recibida. Creando evento en Google Calendar...")
 
-            # Crear evento en Google Calendar
+            # Datos del evento para crear
+            start_time = datetime(2025, 1, 10, 14, 0)  # Fechas del ejemplo
+            end_time = datetime(2025, 1, 10, 15, 0)
+            summary = "Proyecto"
+
             try:
                 event = create_event(start_time, end_time, summary)
+                logger.info(f"Evento creado con éxito: {event.get('htmlLink')}")
                 return f"Evento creado con éxito: {event.get('htmlLink')}", None
             except Exception as e:
-                return None, f"Error al crear el evento: {e}"
+                logger.error(f"Error al crear el evento: {e}")
+                return None, str(e)
 
         return assistant_message, None
 
     except Exception as e:
+        logger.error(f"Error al generar respuesta: {str(e)}")
         return None, str(e)
