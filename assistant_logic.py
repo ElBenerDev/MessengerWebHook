@@ -4,7 +4,8 @@ from typing_extensions import override
 import os
 import logging
 from google_calendar_utils import create_event  # Asegúrate de que esta función esté importada correctamente
-from datetime import datetime, timedelta
+from datetime import datetime
+import re
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -35,6 +36,25 @@ class EventHandler(AssistantEventHandler):
         logger.debug(f"Delta: {delta.value}")
         self.assistant_message += delta.value
 
+def parse_datetime_from_user_message(user_message):
+    """ Extrae fecha, hora de inicio y hora de fin de un mensaje del usuario. """
+    # Usar expresiones regulares para encontrar fechas y horas en el mensaje
+    date_pattern = r"\b(\d{4}-\d{2}-\d{2})\b"  # Formato de fecha YYYY-MM-DD
+    time_pattern = r"\b(\d{2}:\d{2})\b"        # Formato de hora HH:MM
+
+    dates = re.findall(date_pattern, user_message)
+    times = re.findall(time_pattern, user_message)
+
+    if dates and len(times) >= 2:  # Necesitamos al menos una fecha y dos horas
+        start_date = dates[0]
+        start_time = times[0]
+        end_time = times[1]
+        start_datetime = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M")
+        end_datetime = datetime.strptime(f"{start_date} {end_time}", "%Y-%m-%d %H:%M")
+        return start_datetime, end_datetime
+
+    return None, None
+
 def handle_assistant_response(user_message, user_id):
     """ Maneja la respuesta del asistente de OpenAI. """
     try:
@@ -63,24 +83,23 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Si el mensaje es "Correcto", creamos el evento en Google Calendar
-        if "correcto" in assistant_message.lower():
-            logger.info("Confirmación de creación de evento recibida. Creando evento en Google Calendar...")
+        # Intentar extraer fecha y hora del mensaje del usuario
+        start_time, end_time = parse_datetime_from_user_message(user_message)
+        if not start_time or not end_time:
+            return (
+                "No pude entender las fechas y horas del evento. Por favor, proporciona el formato YYYY-MM-DD HH:MM.",
+                None,
+            )
 
-            # Datos del evento para crear
-            start_time = datetime(2025, 1, 10, 14, 0)  # Fechas del ejemplo
-            end_time = datetime(2025, 1, 10, 15, 0)
-            summary = "Proyecto"
-
-            try:
-                event = create_event(start_time, end_time, summary)
-                logger.info(f"Evento creado con éxito: {event.get('htmlLink')}")
-                return f"Evento creado con éxito: {event.get('htmlLink')}", None
-            except Exception as e:
-                logger.error(f"Error al crear el evento: {e}")
-                return None, str(e)
-
-        return assistant_message, None
+        # Crear el evento con la información proporcionada
+        summary = "Evento del asistente"
+        try:
+            event = create_event(start_time, end_time, summary)
+            logger.info(f"Evento creado con éxito: {event.get('htmlLink')}")
+            return f"Evento creado con éxito: {event.get('htmlLink')}", None
+        except Exception as e:
+            logger.error(f"Error al crear el evento: {e}")
+            return None, str(e)
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
