@@ -94,33 +94,19 @@ def handle_assistant_response(user_message, user_id):
         ) as stream:
             stream.until_done()
 
-        assistant_message = event_handler.assistant_message.strip()
+        assistant_message = event_handler.assistant_message.strip()  # Solo extraemos el mensaje limpio
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Verifica si la respuesta del asistente es válida antes de devolverla
+        # Verifica que el asistente haya generado algo
         if not assistant_message:
-            raise ValueError("La respuesta del asistente está vacía")
+            return "No se ha recibido una respuesta válida del asistente."
 
-        return assistant_message  # Retorna solo un valor, sin necesidad de desempaquetar
+        # Devolver la respuesta generada al usuario
+        return assistant_message  # Solo devolver la respuesta como cadena de texto
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
         return f"Hubo un problema al procesar tu mensaje: {str(e)}"
-
-def handle_user_confirmation(message, user_id, event_details):
-    """Maneja la confirmación del usuario para crear el evento."""
-    if message.strip().lower() == "sí":
-        start_time, end_time, title = event_details
-        if start_time and end_time and title:
-            try:
-                event = create_event(start_time, end_time, title)
-                return f"Evento creado exitosamente: {event.get('htmlLink')}", None
-            except Exception as e:
-                logger.error(f"Error al crear el evento: {e}")
-                return None, f"Error al crear el evento: {e}"
-        else:
-            return None, "No se pudieron extraer todos los detalles del evento."
-    return None, "Confirmación no recibida. Por favor, confirma los detalles del evento."
 
 def ask_for_event_details(user_id, step="title"):
     """Función que se encarga de preguntar al usuario por los detalles del evento paso a paso."""
@@ -136,36 +122,11 @@ def ask_for_event_details(user_id, step="title"):
 
 def handle_conversation(user_message, user_id):
     """Controla la conversación completa con el asistente"""
-    user_data = {}
-
-    # Primera interacción, pregunta el título del evento
+    
+    # Respuesta inicial cuando el usuario dice "Hola"
     if user_message.strip().lower() == "hola":
-        response = ask_for_event_details(user_id, step="title")
-        return response, user_data
+        return handle_assistant_response(user_message, user_id)
 
-    if "title" not in user_data:
-        user_data["title"] = user_message
-        response = ask_for_event_details(user_id, step="date")
-        return response, user_data
-
-    if "date" not in user_data:
-        user_data["date"] = user_message
-        response = ask_for_event_details(user_id, step="start_time")
-        return response, user_data
-
-    if "start_time" not in user_data:
-        user_data["start_time"] = user_message
-        response = ask_for_event_details(user_id, step="end_time")
-        return response, user_data
-
-    if "end_time" not in user_data:
-        user_data["end_time"] = user_message
-        # Confirmar los detalles
-        response = f"Perfecto! He recogido todos los detalles:\n\n"\
-                   f"Título: {user_data['title']}\n"\
-                   f"Fecha: {user_data['date']}\n"\
-                   f"Hora de inicio: {user_data['start_time']}\n"\
-                   f"Hora de fin: {user_data['end_time']}\n\n"\
-                   f"¿Es todo correcto? (Sí/No)"
-        return response, user_data
-    return "Algo salió mal. Vuelve a intentarlo.", user_data
+    # Lógica adicional si es necesario
+    # Aquí podrías agregar más interacciones, como pedir detalles para eventos o algo más específico
+    return handle_assistant_response(user_message, user_id)  # Contestar de forma estándar
