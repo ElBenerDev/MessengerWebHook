@@ -69,27 +69,6 @@ def create_event(start_time, end_time, summary):
         logging.error(f"Error al crear el evento: {e}")
         raise
 
-def parse_datetime_from_user_message(user_message):
-    """ Extrae fecha, hora de inicio y hora de fin de un mensaje del usuario. """
-    date_pattern = r"(\d{1,2} de \w+ de \d{4})"  # Formato de fecha
-    time_pattern = r"(\d{1,2}:\d{2} [APM]{2})"  # Formato de hora
-    title_pattern = r"título[:]? (\w+)"  # Título del evento
-
-    dates = re.findall(date_pattern, user_message)
-    times = re.findall(time_pattern, user_message)
-    title_match = re.search(title_pattern, user_message)
-
-    if not dates or len(times) < 2 or not title_match:
-        raise ValueError("Faltan datos clave para el evento.")
-
-    event_date = datetime.strptime(dates[0], "%d de %B de %Y")
-    start_time = datetime.strptime(f"{event_date.date()} {times[0]}", "%Y-%m-%d %I:%M %p")
-    end_time = datetime.strptime(f"{event_date.date()} {times[1]}", "%Y-%m-%d %I:%M %p")
-
-    title = title_match.group(1).strip()
-
-    return start_time, end_time, title
-
 def handle_assistant_response(user_message, user_id):
     """ Maneja la respuesta del asistente de OpenAI. """
     try:
@@ -118,17 +97,7 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Intentar extraer fecha y hora del mensaje del usuario
-        try:
-            start_time, end_time, title = parse_datetime_from_user_message(user_message)
-            response = f"¡¡Perfecto! Entonces voy a crear el evento con la siguiente información:\n"\
-                       f"\n**Título:** {title}\n**Fecha y hora:** {start_time.strftime('%d de %B de %Y')} de {start_time.strftime('%I:%M %p')} a {end_time.strftime('%I:%M %p')}\n"\
-                       f"\n¿Todo está correcto?"
-            return response, (start_time, end_time, title)
-
-        except Exception as e:
-            logger.error(f"Error al extraer detalles del evento: {str(e)}")
-            return "No pude entender las fechas y horas del evento. Por favor, proporciona el formato adecuado.", None
+        return assistant_message
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
@@ -148,3 +117,51 @@ def handle_user_confirmation(message, user_id, event_details):
         else:
             return None, "No se pudieron extraer todos los detalles del evento."
     return None, "Confirmación no recibida. Por favor, confirma los detalles del evento."
+
+def ask_for_event_details(user_id, step="title"):
+    """Función que se encarga de preguntar al usuario por los detalles del evento paso a paso."""
+    if step == "title":
+        return "¿Cómo te gustaría llamar al evento?"
+    elif step == "date":
+        return "¿Qué día será el evento? (Por ejemplo, 11 de enero de 2025)"
+    elif step == "start_time":
+        return "¿A qué hora comienza el evento? (Por ejemplo, 10:00 AM)"
+    elif step == "end_time":
+        return "¿A qué hora termina el evento? (Por ejemplo, 11:00 AM)"
+    return "Por favor, proporciona los detalles del evento."
+
+def handle_conversation(user_message, user_id):
+    """Controla la conversación completa con el asistente"""
+    user_data = {}
+
+    # Primera interacción, pregunta el título del evento
+    if user_message.strip().lower() == "hola":
+        response = ask_for_event_details(user_id, step="title")
+        return response, user_data
+
+    if "title" not in user_data:
+        user_data["title"] = user_message
+        response = ask_for_event_details(user_id, step="date")
+        return response, user_data
+
+    if "date" not in user_data:
+        user_data["date"] = user_message
+        response = ask_for_event_details(user_id, step="start_time")
+        return response, user_data
+
+    if "start_time" not in user_data:
+        user_data["start_time"] = user_message
+        response = ask_for_event_details(user_id, step="end_time")
+        return response, user_data
+
+    if "end_time" not in user_data:
+        user_data["end_time"] = user_message
+        # Confirmar los detalles
+        response = f"Perfecto! He recogido todos los detalles:\n\n"\
+                   f"Título: {user_data['title']}\n"\
+                   f"Fecha: {user_data['date']}\n"\
+                   f"Hora de inicio: {user_data['start_time']}\n"\
+                   f"Hora de fin: {user_data['end_time']}\n\n"\
+                   f"¿Es todo correcto? (Sí/No)"
+        return response, user_data
+    return "Algo salió mal. Vuelve a intentarlo.", user_data
