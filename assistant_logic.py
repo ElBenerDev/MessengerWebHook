@@ -53,7 +53,7 @@ def build_service():
     )
     return build('calendar', 'v3', credentials=credentials)
 
-def create_event_in_calendar(start_time, end_time, summary):
+def create_event(start_time, end_time, summary):
     """Crea un evento en Google Calendar con los parámetros básicos."""
     try:
         service = build_service()
@@ -70,7 +70,7 @@ def create_event_in_calendar(start_time, end_time, summary):
         raise
 
 def handle_assistant_response(user_message, user_id):
-    """ Maneja la respuesta del asistente de OpenAI. """
+    """Maneja la respuesta del asistente de OpenAI."""
     try:
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
@@ -97,19 +97,23 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        return assistant_message
+        # Verifica si la respuesta del asistente es válida antes de devolverla
+        if not assistant_message:
+            raise ValueError("La respuesta del asistente está vacía")
+
+        return assistant_message  # Retorna solo un valor, sin necesidad de desempaquetar
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
-        return "Hubo un problema al procesar tu mensaje.", str(e)
+        return f"Hubo un problema al procesar tu mensaje: {str(e)}"
 
 def handle_user_confirmation(message, user_id, event_details):
-    """ Maneja la confirmación del usuario para crear el evento. """
+    """Maneja la confirmación del usuario para crear el evento."""
     if message.strip().lower() == "sí":
         start_time, end_time, title = event_details
         if start_time and end_time and title:
             try:
-                event = create_event_in_calendar(start_time, end_time, title)
+                event = create_event(start_time, end_time, title)
                 return f"Evento creado exitosamente: {event.get('htmlLink')}", None
             except Exception as e:
                 logger.error(f"Error al crear el evento: {e}")
@@ -130,32 +134,30 @@ def ask_for_event_details(user_id, step="title"):
         return "¿A qué hora termina el evento? (Por ejemplo, 11:00 AM)"
     return "Por favor, proporciona los detalles del evento."
 
-def handle_conversation(user_message, user_id, user_data):
-    """Controla la conversación completa con el asistente."""
+def handle_conversation(user_message, user_id):
+    """Controla la conversación completa con el asistente"""
+    user_data = {}
+
     # Primera interacción, pregunta el título del evento
     if user_message.strip().lower() == "hola":
         response = ask_for_event_details(user_id, step="title")
         return response, user_data
 
-    # Preguntar por el título
     if "title" not in user_data:
         user_data["title"] = user_message
         response = ask_for_event_details(user_id, step="date")
         return response, user_data
 
-    # Preguntar por la fecha
     if "date" not in user_data:
         user_data["date"] = user_message
         response = ask_for_event_details(user_id, step="start_time")
         return response, user_data
 
-    # Preguntar por la hora de inicio
     if "start_time" not in user_data:
         user_data["start_time"] = user_message
         response = ask_for_event_details(user_id, step="end_time")
         return response, user_data
 
-    # Preguntar por la hora de fin
     if "end_time" not in user_data:
         user_data["end_time"] = user_message
         # Confirmar los detalles
@@ -166,5 +168,4 @@ def handle_conversation(user_message, user_id, user_data):
                    f"Hora de fin: {user_data['end_time']}\n\n"\
                    f"¿Es todo correcto? (Sí/No)"
         return response, user_data
-
     return "Algo salió mal. Vuelve a intentarlo.", user_data
