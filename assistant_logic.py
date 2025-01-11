@@ -28,13 +28,17 @@ class EventHandler(AssistantEventHandler):
 
     @override
     def on_text_created(self, text) -> None:
-        logger.debug(f"Asistente: {text.value}")
-        self.assistant_message += text.value
+        logger.debug(f"Asistente (on_text_created): {text.value}")
+        # Capturamos la respuesta inicial completa
+        self.assistant_message = text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
-        logger.debug(f"Delta: {delta.value}")
-        self.assistant_message += delta.value
+        logger.debug(f"Delta (on_text_delta): {delta.value}")
+        # Concatenamos solo los deltas adicionales si no hay repetición
+        if not self.assistant_message.endswith(delta.value):
+            self.assistant_message += delta.value
+
 
 # Función para crear un servicio de Google Calendar
 def build_service():
