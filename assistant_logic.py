@@ -3,9 +3,7 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import os
 import logging
-from google_calendar_utils import create_event  # Asegúrate de que esta función esté importada correctamente
 from datetime import datetime
-import re
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -41,7 +39,7 @@ class EventHandler(AssistantEventHandler):
 def build_service():
     """Crea y devuelve un servicio de Google Calendar."""
     SCOPES = ['https://www.googleapis.com/auth/calendar']
-    SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', '/etc/secrets/GOOGLE_SERVICE_ACCOUNT_FILE.json')
+    SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', 'credentials.json')
     CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
     # Validar si la variable de entorno CALENDAR_ID está presente
@@ -59,14 +57,14 @@ def create_event(start_time, end_time, summary):
         service = build_service()
         event = {
             'summary': summary,
-            'start': {'dateTime': start_time.isoformat(), 'timeZone': 'America/Argentina/Buenos_Aires'},
-            'end': {'dateTime': end_time.isoformat(), 'timeZone': 'America/Argentina/Buenos_Aires'},
+            'start': {'dateTime': start_time.isoformat(), 'timeZone': 'America/Mexico_City'},
+            'end': {'dateTime': end_time.isoformat(), 'timeZone': 'America/Mexico_City'},
         }
         event = service.events().insert(calendarId=os.getenv('GOOGLE_CALENDAR_ID'), body=event).execute()
-        logging.info(f"Evento creado: {event.get('htmlLink')}")
+        logger.info(f"Evento creado: {event.get('htmlLink')}")
         return event
     except Exception as e:
-        logging.error(f"Error al crear el evento: {e}")
+        logger.error(f"Error al crear el evento: {e}")
         raise
 
 def handle_assistant_response(user_message, user_id):
@@ -101,32 +99,27 @@ def handle_assistant_response(user_message, user_id):
         if not assistant_message:
             return "No se ha recibido una respuesta válida del asistente."
 
-        # Devolver la respuesta generada al usuario
-        return assistant_message  # Solo devolver la respuesta como cadena de texto
+        return assistant_message
 
     except Exception as e:
         logger.error(f"Error al generar respuesta: {str(e)}")
         return f"Hubo un problema al procesar tu mensaje: {str(e)}"
 
-def ask_for_event_details(user_id, step="title"):
-    """Función que se encarga de preguntar al usuario por los detalles del evento paso a paso."""
-    if step == "title":
-        return "¿Cómo te gustaría llamar al evento?"
-    elif step == "date":
-        return "¿Qué día será el evento? (Por ejemplo, 11 de enero de 2025)"
-    elif step == "start_time":
-        return "¿A qué hora comienza el evento? (Por ejemplo, 10:00 AM)"
-    elif step == "end_time":
-        return "¿A qué hora termina el evento? (Por ejemplo, 11:00 AM)"
-    return "Por favor, proporciona los detalles del evento."
-
 def handle_conversation(user_message, user_id):
-    """Controla la conversación completa con el asistente"""
-    
-    # Respuesta inicial cuando el usuario dice "Hola"
+    """Controla la conversación completa con el asistente."""
     if user_message.strip().lower() == "hola":
         return handle_assistant_response(user_message, user_id)
 
-    # Lógica adicional si es necesario
-    # Aquí podrías agregar más interacciones, como pedir detalles para eventos o algo más específico
-    return handle_assistant_response(user_message, user_id)  # Contestar de forma estándar
+    # Verifica si el mensaje contiene palabras clave para crear un evento
+    if "crear evento" in user_message.lower():
+        try:
+            # Extraer detalles básicos del evento de manera simple
+            summary = "Evento de prueba"
+            start_time = datetime.now()
+            end_time = start_time.replace(hour=start_time.hour + 1)
+            event = create_event(start_time, end_time, summary)
+            return f"Evento creado con éxito: {event.get('htmlLink')}"
+        except Exception as e:
+            return f"Error al crear el evento: {str(e)}"
+
+    return handle_assistant_response(user_message, user_id)
