@@ -69,12 +69,15 @@ def callback():
         ZOHO_REFRESH_TOKEN = tokens['refresh_token']
 
         # Aquí puedes guardar estos tokens de forma segura o en tu base de datos
+        logger.info(f"Access Token: {ZOHO_ACCESS_TOKEN}")
+        logger.info(f"Refresh Token: {ZOHO_REFRESH_TOKEN}")
 
         return jsonify({
             'access_token': ZOHO_ACCESS_TOKEN,
             'refresh_token': ZOHO_REFRESH_TOKEN
         })
     else:
+        logger.error(f"Error al obtener tokens: {response.text}")
         return f"Error al obtener tokens: {response.text}", 400
 
 # Ruta para obtener información del usuario en Zoho CRM
