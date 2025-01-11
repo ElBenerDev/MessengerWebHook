@@ -1,3 +1,4 @@
+from flask import Flask, request, jsonify
 from openai import OpenAI
 from openai import AssistantEventHandler
 from typing_extensions import override
@@ -10,6 +11,8 @@ from googleapiclient.discovery import build
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
 
 # Configura tu cliente con la API key desde el entorno
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -36,13 +39,13 @@ class EventHandler(AssistantEventHandler):
         logger.debug(f"Delta: {delta.value}")
         self.assistant_message += delta.value
 
+
 def build_service():
     """Crea y devuelve un servicio de Google Calendar."""
     SCOPES = ['https://www.googleapis.com/auth/calendar']
     SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', 'credentials.json')
     CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
 
-    # Validar si la variable de entorno CALENDAR_ID está presente
     if not CALENDAR_ID:
         raise EnvironmentError("La variable de entorno 'GOOGLE_CALENDAR_ID' no está configurada.")
 
@@ -51,8 +54,9 @@ def build_service():
     )
     return build('calendar', 'v3', credentials=credentials)
 
+
 def create_event(start_time, end_time, summary):
-    """Crea un evento en Google Calendar con los parámetros básicos."""
+    """Crea un evento en Google Calendar."""
     try:
         service = build_service()
         event = {
@@ -67,8 +71,18 @@ def create_event(start_time, end_time, summary):
         logger.error(f"Error al crear el evento: {e}")
         raise
 
-def handle_assistant_response(user_message, user_id):
-    """Maneja la respuesta del asistente de OpenAI."""
+
+@app.route('/generate-response', methods=['POST'])
+def generate_response():
+    data = request.json
+    user_message = data.get('message')
+    user_id = data.get('sender_id')
+
+    if not user_message or not user_id:
+        return jsonify({'response': "No se proporcionó un mensaje o ID de usuario válido."}), 400
+
+    logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
+
     try:
         # Verificar si ya existe un thread_id para este usuario
         if user_id not in user_threads:
@@ -76,14 +90,13 @@ def handle_assistant_response(user_message, user_id):
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
 
-        # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
             role="user",
             content=user_message
         )
 
-        # Crear y manejar la respuesta del asistente
+        # Manejar la respuesta del asistente
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
@@ -92,34 +105,24 @@ def handle_assistant_response(user_message, user_id):
         ) as stream:
             stream.until_done()
 
-        assistant_message = event_handler.assistant_message.strip()  # Solo extraemos el mensaje limpio
+        assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Verifica que el asistente haya generado algo
-        if not assistant_message:
-            return "No se ha recibido una respuesta válida del asistente."
-
-        return assistant_message
-
-    except Exception as e:
-        logger.error(f"Error al generar respuesta: {str(e)}")
-        return f"Hubo un problema al procesar tu mensaje: {str(e)}"
-
-def handle_conversation(user_message, user_id):
-    """Controla la conversación completa con el asistente."""
-    if user_message.strip().lower() == "hola":
-        return handle_assistant_response(user_message, user_id)
-
-    # Verifica si el mensaje contiene palabras clave para crear un evento
-    if "crear evento" in user_message.lower():
-        try:
-            # Extraer detalles básicos del evento de manera simple
-            summary = "Evento de prueba"
+        # Manejar creación de evento si aplica
+        if "crear evento" in user_message.lower():
+            summary = "Evento de prueba"  # Podrías extraer esta información del mensaje
             start_time = datetime.now()
             end_time = start_time.replace(hour=start_time.hour + 1)
             event = create_event(start_time, end_time, summary)
-            return f"Evento creado con éxito: {event.get('htmlLink')}"
-        except Exception as e:
-            return f"Error al crear el evento: {str(e)}"
+            return jsonify({'response': f"Evento creado con éxito: {event.get('htmlLink')}"})
 
-    return handle_assistant_response(user_message, user_id)
+        # Retornar respuesta estándar del asistente
+        return jsonify({'response': assistant_message})
+
+    except Exception as e:
+        logger.error(f"Error al procesar la solicitud: {str(e)}")
+        return jsonify({'response': f"Error al procesar la solicitud: {str(e)}"}), 500
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
