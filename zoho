@@ -1,0 +1,6 @@
+https://accounts.zoho.com/oauth/v2/auth
+?scope=ZohoCRM.modules.ALL
+&client_id=1000.5AXSBZQWODTZW71NWXA6XXZT156XPX
+&response_type=code
+&access_type=offline
+&redirect_uri=https://messengerwebhook.onrender.com/callback
