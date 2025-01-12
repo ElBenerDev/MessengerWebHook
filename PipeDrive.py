@@ -73,5 +73,5 @@ if __name__ == "__main__":
             # Paso 3: Crear una actividad asociada al lead
             activity_subject = "Reunión inicial con cliente"
             activity_due_date = "2025-01-15"  # Fecha de la actividad
-            activity_due_time = "12:00"  # Hora de la actividad
+            activity_due_time = "17:00"  # Hora de la actividad
             create_activity(activity_subject, activity_due_date, activity_due_time, lead_id)
