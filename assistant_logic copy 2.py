@@ -2,6 +2,9 @@ from openai import OpenAI
 from openai import AssistantEventHandler
 from typing_extensions import override
 import logging
+from datetime import datetime
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 import os
 
 # Configuración de logging
@@ -36,6 +39,39 @@ class EventHandler(AssistantEventHandler):
         if not self.assistant_message.endswith(delta.value):
             self.assistant_message += delta.value
 
+
+# Función para crear un servicio de Google Calendar
+def build_service():
+    """Crea y devuelve un servicio de Google Calendar."""
+    SCOPES = ['https://www.googleapis.com/auth/calendar']
+    SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE', 'credentials.json')
+    CALENDAR_ID = os.getenv('GOOGLE_CALENDAR_ID')
+
+    if not CALENDAR_ID:
+        raise EnvironmentError("La variable de entorno 'GOOGLE_CALENDAR_ID' no está configurada.")
+
+    credentials = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES
+    )
+    return build('calendar', 'v3', credentials=credentials)
+
+# Función para crear eventos en Google Calendar
+def create_event(start_time, end_time, summary):
+    """Crea un evento en Google Calendar con los parámetros básicos."""
+    try:
+        service = build_service()
+        event = {
+            'summary': summary,
+            'start': {'dateTime': start_time.isoformat(), 'timeZone': 'America/Mexico_City'},
+            'end': {'dateTime': end_time.isoformat(), 'timeZone': 'America/Mexico_City'},
+        }
+        event = service.events().insert(calendarId=os.getenv('GOOGLE_CALENDAR_ID'), body=event).execute()
+        logger.info(f"Evento creado: {event.get('htmlLink')}")
+        return event
+    except Exception as e:
+        logger.error(f"Error al crear el evento: {e}")
+        raise
+
 # Lógica principal del asistente
 def handle_assistant_response(user_message, user_id):
     """
@@ -69,6 +105,14 @@ def handle_assistant_response(user_message, user_id):
 
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
+
+        # Verificar si el mensaje contiene comandos para crear un evento
+        if "crear evento" in user_message.lower():
+            start_time = datetime.now()
+            end_time = start_time.replace(hour=start_time.hour + 1)
+            summary = "Evento de prueba"
+            event = create_event(start_time, end_time, summary)
+            return f"Evento creado con éxito: {event.get('htmlLink')}", None
 
         return assistant_message, None
 
