@@ -26,11 +26,14 @@ user_context = {}
 
 # Crear una organización en Pipedrive
 def create_organization(name):
+    logger.info(f"Creando organización con el nombre: {name}")
     organization_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/organizations?api_token={PIPEDRIVE_API_KEY}'
     organization_data = {'name': name}
     response = requests.post(organization_url, json=organization_data)
+    logger.debug(f"Respuesta al crear organización: {response.text}")
     if response.status_code == 201:
         organization = response.json()
+        logger.info(f"Organización creada con éxito. ID: {organization['data']['id']}")
         return organization['data']['id']
     else:
         logger.error(f"Error al crear la organización: {response.text}")
@@ -38,11 +41,14 @@ def create_organization(name):
 
 # Crear un lead en Pipedrive
 def create_lead(title, organization_id):
+    logger.info(f"Creando lead con título: {title} para la organización ID: {organization_id}")
     lead_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     lead_data = {'title': title, 'organization_id': organization_id}
     response = requests.post(lead_url, json=lead_data)
+    logger.debug(f"Respuesta al crear lead: {response.text}")
     if response.status_code == 201:
         lead = response.json()
+        logger.info(f"Lead creado con éxito. ID: {lead['data']['id']}")
         return lead['data']['id']
     else:
         logger.error(f"Error al crear el lead: {response.text}")
@@ -50,6 +56,7 @@ def create_lead(title, organization_id):
 
 # Crear una actividad en Pipedrive
 def create_activity(subject, due_date, due_time, lead_id):
+    logger.info(f"Creando actividad con el asunto: {subject} para el lead ID: {lead_id}")
     activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
     activity_data = {
         'subject': subject,
@@ -60,6 +67,7 @@ def create_activity(subject, due_date, due_time, lead_id):
         'lead_id': lead_id,
     }
     response = requests.post(activity_url, json=activity_data)
+    logger.debug(f"Respuesta al crear actividad: {response.text}")
     if response.status_code == 201:
         logger.info("Actividad creada exitosamente!")
     else:
@@ -67,6 +75,7 @@ def create_activity(subject, due_date, due_time, lead_id):
 
 # Extraer datos clave del mensaje del usuario
 def extract_user_data(message, context):
+    logger.info(f"Extrayendo datos del mensaje: {message}")
     # Patrones de extracción de datos
     email_pattern = r"[\w\.-]+@[\w\.-]+\.\w+"
     phone_pattern = r"\b\d{10}\b|\b\d{7}\b|\+?\d[\d\s-]{8,}\d"
@@ -92,6 +101,7 @@ def extract_user_data(message, context):
 # Procesar mensajes del asistente y crear registros en Pipedrive
 def handle_assistant_response(user_message, user_id):
     try:
+        logger.info(f"Procesando mensaje del usuario: {user_message} para el usuario ID: {user_id}")
         # Crear un hilo para el usuario si no existe
         if user_id not in user_threads:
             thread = client.beta.threads.create()
@@ -123,6 +133,7 @@ def handle_assistant_response(user_message, user_id):
         # Verificar si tenemos todos los datos necesarios
         context = user_context[user_id]
         if all(key in context for key in ['name', 'email', 'phone', 'service']):
+            logger.info(f"Todos los datos necesarios están disponibles: {context}")
             org_id = create_organization(context['name'])
             if org_id:
                 lead_id = create_lead(f"{context['service']} - {context['name']}", org_id)
@@ -134,7 +145,7 @@ def handle_assistant_response(user_message, user_id):
         return assistant_message, None
 
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Error en la función handle_assistant_response: {e}")
         return None, str(e)
 
 # Evento para manejar el stream de respuestas del asistente
