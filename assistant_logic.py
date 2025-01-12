@@ -144,8 +144,9 @@ def handle_assistant_response(user_message, user_id):
             if org_id:
                 lead_id = create_lead(context['service'], org_id)
                 if lead_id:
+                    # Agregar la actividad de la cita
                     create_activity("Reunión inicial", "2025-01-15", "10:00", lead_id)
-                    return "¡Lead creado exitosamente en Pipedrive!", None
+                    return f"¡Lead y actividad creados exitosamente en Pipedrive! Cita registrada para {context['name']}.", None
             return "Error al crear el lead en Pipedrive.", None
 
         return assistant_message, None
