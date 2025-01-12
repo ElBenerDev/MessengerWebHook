@@ -1,10 +1,10 @@
+import requests
+import logging
+import os
+import re
 from openai import OpenAI
 from openai import AssistantEventHandler
 from typing_extensions import override
-import logging
-import os
-import requests
-import re
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -23,23 +23,6 @@ COMPANY_DOMAIN = os.getenv("PIPEDRIVE_COMPANY_DOMAIN", "companiademuestra")
 # Diccionario para almacenar los hilos y contexto por usuario
 user_threads = {}
 user_context = {}
-
-# Crear un manejador de eventos para manejar el stream de respuestas del asistente
-class EventHandler(AssistantEventHandler):
-    def __init__(self):
-        super().__init__()
-        self.assistant_message = ""
-
-    @override
-    def on_text_created(self, text) -> None:
-        logger.debug(f"Asistente (on_text_created): {text.value}")
-        self.assistant_message = text.value
-
-    @override
-    def on_text_delta(self, delta, snapshot):
-        logger.debug(f"Delta (on_text_delta): {delta.value}")
-        if not self.assistant_message.endswith(delta.value):
-            self.assistant_message += delta.value
 
 # Crear una organización en Pipedrive
 def create_organization(name):
@@ -106,7 +89,7 @@ def extract_user_data(message, context):
     if service:
         context['service'] = service.group(2).strip()
 
-# Procesar mensajes del asistente
+# Procesar mensajes del asistente y crear registros en Pipedrive
 def handle_assistant_response(user_message, user_id):
     try:
         # Crear un hilo para el usuario si no existe
@@ -142,11 +125,10 @@ def handle_assistant_response(user_message, user_id):
         if all(key in context for key in ['name', 'email', 'phone', 'service']):
             org_id = create_organization(context['name'])
             if org_id:
-                lead_id = create_lead(context['service'], org_id)
+                lead_id = create_lead(f"{context['service']} - {context['name']}", org_id)
                 if lead_id:
-                    # Agregar la actividad de la cita
-                    create_activity("Reunión inicial", "2025-01-15", "10:00", lead_id)
-                    return f"¡Lead y actividad creados exitosamente en Pipedrive! Cita registrada para {context['name']}.", None
+                    create_activity("Reunión inicial", "2025-01-15", "12:00", lead_id)
+                    return "¡Lead creado exitosamente en Pipedrive!", None
             return "Error al crear el lead en Pipedrive.", None
 
         return assistant_message, None
@@ -155,9 +137,26 @@ def handle_assistant_response(user_message, user_id):
         logger.error(f"Error: {e}")
         return None, str(e)
 
+# Evento para manejar el stream de respuestas del asistente
+class EventHandler(AssistantEventHandler):
+    def __init__(self):
+        super().__init__()
+        self.assistant_message = ""
+
+    @override
+    def on_text_created(self, text) -> None:
+        logger.debug(f"Asistente (on_text_created): {text.value}")
+        self.assistant_message = text.value
+
+    @override
+    def on_text_delta(self, delta, snapshot):
+        logger.debug(f"Delta (on_text_delta): {delta.value}")
+        if not self.assistant_message.endswith(delta.value):
+            self.assistant_message += delta.value
+
 if __name__ == "__main__":
     # Ejemplo de prueba
-    user_message = "Hola, me llamo Juan Pérez, mi correo es juan.perez@ejemplo.com, mi número es 5551234567 y estoy buscando un servicio de consultoría."
+    user_message = "Hola, me llamo Manuel Bernardo Ramirez Osornio, mi correo es bernrdoraos90@gmail.com, mi número es 4426693885 y estoy buscando un servicio de brackets."
     user_id = "12345"
     response, error = handle_assistant_response(user_message, user_id)
     if error:
