@@ -6,15 +6,15 @@ import os
 import requests
 
 # Configuración de logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 # Configuración del cliente OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Configuración de Pipedrive
-PIPEDRIVE_API_KEY = os.getenv("PIPEDRIVE_API_KEY")
-COMPANY_DOMAIN = os.getenv("PIPEDRIVE_COMPANY_DOMAIN")
+PIPEDRIVE_API_KEY = '8f2492eead4201ac69582ee4f3dfefd13d818b79'  # API token de Pipedrive
+COMPANY_DOMAIN = 'companiademuestra'  # Dominio de tu cuenta de Pipedrive
 
 # ID del asistente
 assistant_id = os.getenv("ASSISTANT_ID", "asst_d2QBbmcrr6vdZgxusPdqNOtY")
@@ -31,26 +31,21 @@ class EventHandler(AssistantEventHandler):
     @override
     def on_text_created(self, text) -> None:
         logger.debug(f"Asistente (on_text_created): {text.value}")
-        # Capturamos la respuesta inicial completa
         self.assistant_message = text.value
 
     @override
     def on_text_delta(self, delta, snapshot):
         logger.debug(f"Delta (on_text_delta): {delta.value}")
-        # Concatenamos solo los deltas adicionales si no hay repetición
         if not self.assistant_message.endswith(delta.value):
             self.assistant_message += delta.value
 
 # Función para crear un lead en Pipedrive
 def create_pipedrive_lead(name, organization=None, value=None):
-    """
-    Crea un lead en Pipedrive con los datos proporcionados.
-    :param name: str, nombre del lead
-    :param organization: str, nombre de la organización (opcional)
-    :param value: float, valor del lead (opcional)
-    :return: str | None, mensaje de éxito o error
-    """
     try:
+        if not name:
+            logger.error("El nombre del lead es obligatorio.")
+            return "Error: El nombre del lead es obligatorio."
+        
         lead_url = f"https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}"
         lead_data = {
             "title": name,
@@ -71,27 +66,18 @@ def create_pipedrive_lead(name, organization=None, value=None):
 
 # Lógica principal del asistente
 def handle_assistant_response(user_message, user_id):
-    """
-    Procesa el mensaje del usuario y devuelve una respuesta generada por el asistente.
-    :param user_message: str, mensaje del usuario
-    :param user_id: str, identificador único del usuario
-    :return: (str, str | None) respuesta generada, error (si ocurre)
-    """
     try:
-        # Verificar si ya existe un hilo para este usuario
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
 
-        # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
             role="user",
             content=user_message
         )
 
-        # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
@@ -103,20 +89,17 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Lógica adicional: Crear leads en Pipedrive si el mensaje lo solicita
         if "crear lead" in user_message.lower():
-            name = "Lead sin nombre"  # Valor predeterminado
-            organization = None
-            value = None
-
-            # Analizar detalles adicionales desde el mensaje
-            # (Puedes personalizar este análisis para extraer valores específicos)
-            if "nombre:" in user_message.lower():
-                name = user_message.split("nombre:")[1].split()[0]
-            if "organización:" in user_message.lower():
-                organization = user_message.split("organización:")[1].split()[0]
-            if "valor:" in user_message.lower():
-                value = float(user_message.split("valor:")[1].split()[0])
+            name = extract_field(user_message, "nombre")
+            organization = extract_field(user_message, "organización")
+            value = extract_field(user_message, "valor")
+            
+            if value:
+                try:
+                    value = float(value)
+                except ValueError:
+                    logger.warning(f"Valor no válido: {value}. Se ignorará.")
+                    value = None
 
             pipedrive_response = create_pipedrive_lead(name, organization, value)
             assistant_message += f"\n\n{pipedrive_response}"
@@ -126,3 +109,21 @@ def handle_assistant_response(user_message, user_id):
     except Exception as e:
         logger.error(f"Error al procesar el mensaje: {str(e)}")
         return None, f"Error al procesar el mensaje: {str(e)}"
+
+def extract_field(message, field_name):
+    """
+    Extrae un campo específico basado en el formato esperado.
+    :param message: str, el mensaje del usuario
+    :param field_name: str, el nombre del campo a buscar
+    :return: str | None, el valor extraído o None si no se encuentra
+    """
+    try:
+        field_lower = field_name.lower() + ":"
+        if field_lower in message.lower():
+            start = message.lower().index(field_lower) + len(field_lower)
+            value = message[start:].split("\n")[0].strip()
+            logger.debug(f"Campo extraído '{field_name}': {value}")
+            return value
+    except Exception as e:
+        logger.warning(f"Error al extraer el campo '{field_name}': {str(e)}")
+    return None
