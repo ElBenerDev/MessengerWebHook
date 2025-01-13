@@ -38,12 +38,12 @@ class EventHandler(AssistantEventHandler):
             self.assistant_message += delta.value
 
 # Función para convertir hora local a UTC
-def convert_to_utc(local_datetime_str, local_tz_str='Europe/Madrid'):
+def convert_to_utc(local_datetime_str, local_tz_str='America/Argentina/Buenos_Aires'):
     local_tz = pytz.timezone(local_tz_str)
     local_datetime = datetime.strptime(local_datetime_str, '%Y-%m-%d %H:%M')
     local_datetime = local_tz.localize(local_datetime)  # Asignamos la zona horaria local
     utc_datetime = local_datetime.astimezone(pytz.utc)  # Convertimos a UTC
-    return utc_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')  # Devolvemos el formato requerido para Pipedrive
+    return utc_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')  # Formato ISO 8601 para Pipedrive
 
 # Función de creación de organización, lead y actividad de Pipedrive
 def create_organization(name):
@@ -80,7 +80,7 @@ def create_activity(subject, due_date, lead_id):
     forced_due_time = "17:00"  # Hora fija a las 5 PM
     
     # Convertir la hora local a UTC
-    activity_due_time_utc = convert_to_utc(f"{due_date} {forced_due_time}", local_tz_str='Europe/Madrid')  # Aquí se especifica la zona horaria
+    activity_due_time_utc = convert_to_utc(f"{due_date} {forced_due_time}", local_tz_str='America/Argentina/Buenos_Aires')
     
     activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
     activity_data = {
@@ -98,7 +98,6 @@ def create_activity(subject, due_date, lead_id):
     else:
         logger.error(f"Error al crear la actividad: {response.status_code}")
         logger.error(response.text)
-
 
 # Lógica principal del asistente
 def handle_assistant_response(user_message, user_id):
