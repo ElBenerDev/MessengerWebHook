@@ -36,7 +36,7 @@ def create_organization(name):
         logger.info(f"Organización creada con éxito. ID: {organization['data']['id']}")
         return organization['data']['id']
     else:
-        logger.error(f"Error al crear la organización: {response.text}")
+        logger.error(f"Error al crear la organización: {response.status_code} - {response.text}")
         return None
 
 # Crear un lead en Pipedrive
@@ -51,7 +51,7 @@ def create_lead(title, organization_id):
         logger.info(f"Lead creado con éxito. ID: {lead['data']['id']}")
         return lead['data']['id']
     else:
-        logger.error(f"Error al crear el lead: {response.text}")
+        logger.error(f"Error al crear el lead: {response.status_code} - {response.text}")
         return None
 
 # Crear una actividad en Pipedrive
@@ -71,7 +71,7 @@ def create_activity(subject, due_date, due_time, lead_id):
     if response.status_code == 201:
         logger.info("Actividad creada exitosamente!")
     else:
-        logger.error(f"Error al crear la actividad: {response.text}")
+        logger.error(f"Error al crear la actividad: {response.status_code} - {response.text}")
 
 # Extraer datos clave del mensaje del usuario
 def extract_user_data(message, context):
