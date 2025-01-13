@@ -60,6 +60,7 @@ def is_within_working_hours(activity_due_time):
 
 # Función para crear contacto
 def create_patient_contact(contact_name, phone=None, email=None):
+    logger.info(f"Creando contacto para: {contact_name}")
     contact_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/persons?api_token={PIPEDRIVE_API_KEY}'
     contact_data = {'name': contact_name}
     if phone:
@@ -70,17 +71,16 @@ def create_patient_contact(contact_name, phone=None, email=None):
     response = requests.post(contact_url, json=contact_data)
     if response.status_code == 201:
         contact = response.json()
-        if 'data' in contact:
-            return contact['data']['id']
-        else:
-            print("Error: No se pudo obtener el ID del contacto.")
+        logger.info(f"Contacto creado exitosamente: {contact['data']['id']}")
+        return contact['data']['id']
     else:
-        print(f"Error al crear el contacto: {response.status_code}")
-        print(response.text)
+        logger.error(f"Error al crear el contacto: {response.status_code}")
+        logger.error(response.text)
     return None
 
 # Función para crear lead
 def create_patient_lead(contact_id, lead_title, lead_owner_id):
+    logger.info(f"Creando lead para el contacto {contact_id} con título '{lead_title}'")
     lead_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     lead_data = {
         'title': lead_title,
@@ -91,24 +91,25 @@ def create_patient_lead(contact_id, lead_title, lead_owner_id):
     response = requests.post(lead_url, json=lead_data)
     if response.status_code == 201:
         lead = response.json()
-        if 'data' in lead:
-            return lead['data']['id']
-        else:
-            print("Error: No se pudo obtener el ID del lead.")
+        logger.info(f"Lead creado exitosamente: {lead['data']['id']}")
+        return lead['data']['id']
     else:
-        print(f"Error al crear el lead: {response.status_code}")
-        print(response.text)
+        logger.error(f"Error al crear el lead: {response.status_code}")
+        logger.error(response.text)
     return None
 
 # Función para verificar actividades existentes
 def check_existing_appointments(due_date, due_time):
+    logger.info(f"Verificando actividades existentes para la fecha {due_date} y hora {due_time}")
     activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
     response = requests.get(activity_url)
     if response.status_code == 200:
         activities = response.json().get('data', [])
         for activity in activities:
             if activity['due_date'] == due_date and activity['due_time'] == due_time:
+                logger.info("Ya existe una actividad programada para ese horario.")
                 return True
+    logger.info("No se encontró ninguna actividad en ese horario.")
     return False
 
 # Función para crear cita dental
@@ -116,13 +117,14 @@ def create_dental_appointment(lead_id, activity_subject, activity_type, activity
     utc_due_time = convert_to_utc(activity_due_date, activity_due_time)
 
     if not is_within_working_hours(activity_due_time):
-        print("La cita no se puede crear porque está fuera del horario laboral.")
+        logger.warning("La cita no se puede crear porque está fuera del horario laboral.")
         return
 
     if check_existing_appointments(activity_due_date, utc_due_time):
-        print("La cita no se puede crear porque ya hay una actividad programada en ese horario.")
+        logger.warning("La cita no se puede crear porque ya hay una actividad programada en ese horario.")
         return
 
+    logger.info(f"Creando cita dental para el lead {lead_id}")
     activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
     activity_data = {
         'subject': activity_subject,
@@ -136,10 +138,10 @@ def create_dental_appointment(lead_id, activity_subject, activity_type, activity
 
     response = requests.post(activity_url, json=activity_data)
     if response.status_code == 201:
-        print("Cita dental creada exitosamente!")
+        logger.info("Cita dental creada exitosamente!")
     else:
-        print(f"Error al crear la cita dental: {response.status_code}")
-        print(response.text)
+        logger.error(f"Error al crear la cita dental: {response.status_code}")
+        logger.error(response.text)
 
 # Lógica principal del asistente
 def handle_assistant_response(user_message, user_id):
