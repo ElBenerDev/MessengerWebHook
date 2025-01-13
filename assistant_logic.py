@@ -47,7 +47,7 @@ def handle_assistant_response(user_message, user_id):
     try:
         # Verificar si ya existe un hilo para este usuario
         if user_id not in user_threads:
-            thread = client.beta.threads.create(assistant_id=assistant_id)
+            thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
 
@@ -62,7 +62,7 @@ def handle_assistant_response(user_message, user_id):
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
-            assistant_id=assistant_id,  # Se incluye aquí el argumento faltante
+            assistant_id=assistant_id,
             event_handler=event_handler,
         ) as stream:
             stream.until_done()
