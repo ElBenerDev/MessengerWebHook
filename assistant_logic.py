@@ -1,4 +1,6 @@
-import openai
+from openai import OpenAI
+from openai import AssistantEventHandler
+from typing_extensions import override
 import logging
 import os
 import requests
@@ -9,8 +11,8 @@ import pytz
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configura tu cliente con la API key desde el entorno
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Configuración del cliente OpenAI
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ID del asistente
 assistant_id = os.getenv("ASSISTANT_ID", "asst_d2QBbmcrr6vdZgxusPdqNOtY")
@@ -26,15 +28,18 @@ activity_due_time = None
 PIPEDRIVE_API_KEY = '8f2492eead4201ac69582ee4f3dfefd13d818b79'
 COMPANY_DOMAIN = 'companiademuestra'
 
-class EventHandler:
+class EventHandler(AssistantEventHandler):
     def __init__(self):
+        super().__init__()
         self.assistant_message = ""
         self.message_complete = False
 
+    @override
     def on_text_created(self, text):
         if not self.message_complete and text['text'] not in self.assistant_message:
             self.assistant_message += text['text']
 
+    @override
     def on_text_delta(self, delta, snapshot):
         if not self.message_complete and delta['text'] not in self.assistant_message:
             self.assistant_message += delta['text']
@@ -64,12 +69,14 @@ def handle_assistant_response(user_message, user_id):
         event_handler = EventHandler()
 
         # Usar OpenAI ChatCompletion para obtener respuestas del asistente
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # Ajustar al modelo que estés usando
-            messages=user_threads[user_id]
-        )
+        with client.beta.threads.runs.stream(
+            thread_id=user_threads[user_id],
+            assistant_id=assistant_id,
+            event_handler=event_handler,
+        ) as stream:
+            stream.until_done()
 
-        assistant_message = response['choices'][0]['message']['content'].strip()
+        assistant_message = event_handler.finalize_message().strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
         # Añadir la respuesta al hilo del usuario
