@@ -16,7 +16,7 @@ def convert_to_utc(local_datetime_str, local_tz_str='America/Argentina/Buenos_Ai
         local_datetime = datetime.strptime(local_datetime_str, '%Y-%m-%d %H:%M')
         local_datetime = local_tz.localize(local_datetime)  # Añadir información de la zona horaria local
         utc_datetime = local_datetime.astimezone(pytz.utc)  # Convertir a UTC
-        return utc_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')  # Formato ISO 8601
+        return utc_datetime.strftime('%H:%M')  # Solo retorna la hora en UTC
     except Exception as e:
         logger.error(f"Error al convertir a UTC: {e}")
         return None
@@ -43,7 +43,7 @@ def create_activity(subject, due_date, lead_id):
         'subject': subject,
         'type': 'meeting',
         'due_date': due_date,  # Fecha de la actividad
-        'due_time': activity_due_time_utc,  # Hora UTC en formato ISO 8601
+        'due_time': activity_due_time_utc,  # Hora UTC correcta
         'duration': '01:00',  # Duración de 1 hora
         'lead_id': lead_id
     }
@@ -51,12 +51,15 @@ def create_activity(subject, due_date, lead_id):
     logger.info(f"Datos enviados a Pipedrive: {activity_data}")
 
     # Hacer la solicitud POST a la API de Pipedrive
-    response = requests.post(activity_url, json=activity_data)
-    if response.status_code == 201:
-        logger.info("Actividad creada exitosamente!")
-    else:
-        logger.error(f"Error al crear la actividad: {response.status_code}")
-        logger.error(response.text)
+    try:
+        response = requests.post(activity_url, json=activity_data)
+        if response.status_code == 201:
+            logger.info("Actividad creada exitosamente!")
+        else:
+            logger.error(f"Error al crear la actividad: {response.status_code}")
+            logger.error(response.text)
+    except Exception as e:
+        logger.error(f"Error en la solicitud a Pipedrive: {e}")
 
 # Prueba de la función
 if __name__ == "__main__":
