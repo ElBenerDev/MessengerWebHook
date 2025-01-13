@@ -110,6 +110,7 @@ def extract_user_data(message, context):
         context['time'] = time.group(0)
 
 # Procesar mensajes del asistente y crear registros en Pipedrive
+# Procesar mensajes del asistente y crear registros en Pipedrive
 def handle_assistant_response(user_message, user_id):
     try:
         logger.info(f"Procesando mensaje del usuario: {user_message} para el usuario ID: {user_id}")
@@ -145,19 +146,26 @@ def handle_assistant_response(user_message, user_id):
         context = user_context[user_id]
         if all(key in context for key in ['name', 'email', 'phone', 'service', 'date', 'time']):
             logger.info(f"Todos los datos necesarios están disponibles: {context}")
+
+            # Crear la organización en Pipedrive
             org_id = create_organization(context['name'])
             if org_id:
+                # Crear el lead en Pipedrive
                 lead_id = create_lead(f"{context['service']} - {context['name']}", org_id)
                 if lead_id:
+                    # Crear la actividad en Pipedrive
                     create_activity(context['service'], context['date'], context['time'], lead_id)
                     return "¡Lead y cita creados exitosamente en Pipedrive!", None
             return "Error al crear el lead y la cita en Pipedrive.", None
 
+        # Si no tenemos todos los datos, devolver el mensaje del asistente
         return assistant_message, None
 
     except Exception as e:
         logger.error(f"Error en la función handle_assistant_response: {e}")
         return None, str(e)
+
+
 
 # Evento para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
