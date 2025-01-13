@@ -4,6 +4,8 @@ from openai import AssistantEventHandler
 from typing_extensions import override
 import logging
 import os
+from datetime import datetime
+import pytz
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -35,6 +37,14 @@ class EventHandler(AssistantEventHandler):
         if not self.assistant_message.endswith(delta.value):
             self.assistant_message += delta.value
 
+# Función para convertir hora local a UTC
+def convert_to_utc(local_datetime_str, local_tz_str='Europe/Madrid'):
+    local_tz = pytz.timezone(local_tz_str)
+    local_datetime = datetime.strptime(local_datetime_str, '%Y-%m-%d %H:%M')
+    local_datetime = local_tz.localize(local_datetime)  # Asignamos la zona horaria local
+    utc_datetime = local_datetime.astimezone(pytz.utc)  # Convertimos a UTC
+    return utc_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')  # Devolvemos el formato requerido para Pipedrive
+
 # Función de creación de organización, lead y actividad de Pipedrive
 def create_organization(name):
     PIPEDRIVE_API_KEY = '8f2492eead4201ac69582ee4f3dfefd13d818b79'
@@ -61,23 +71,34 @@ def create_lead(title, organization_id):
         logger.error(f"Error al crear el lead: {response.status_code}")
         return None
 
-def create_activity(subject, due_date, due_time, lead_id):
+# Modificación en create_activity para forzar la hora a las 5 PM
+def create_activity(subject, due_date, lead_id):
     PIPEDRIVE_API_KEY = '8f2492eead4201ac69582ee4f3dfefd13d818b79'
     COMPANY_DOMAIN = 'companiademuestra'
+    
+    # Forzar la hora a las 17:00 (5 PM) sin importar la hora ingresada por el usuario
+    forced_due_time = "17:00"  # Hora fija a las 5 PM
+    
+    # Convertir la hora local a UTC
+    activity_due_time_utc = convert_to_utc(f"{due_date} {forced_due_time}", local_tz_str='Europe/Madrid')  # Aquí se especifica la zona horaria
+    
     activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
     activity_data = {
         'subject': subject,
         'type': 'meeting',
-        'due_date': due_date,
-        'due_time': due_time,
-        'duration': '01:00',
+        'due_date': due_date,  # La fecha no cambia
+        'due_time': activity_due_time_utc,  # Usamos la hora fija convertida a UTC
+        'duration': '01:00',  # Duración de la actividad
         'lead_id': lead_id
     }
+    
     response = requests.post(activity_url, json=activity_data)
     if response.status_code == 201:
         logger.info("Actividad creada exitosamente!")
     else:
         logger.error(f"Error al crear la actividad: {response.status_code}")
+        logger.error(response.text)
+
 
 # Lógica principal del asistente
 def handle_assistant_response(user_message, user_id):
@@ -118,8 +139,7 @@ def handle_assistant_response(user_message, user_id):
             if lead_id:
                 activity_subject = "Reunión inicial con cliente"
                 activity_due_date = "2025-01-13"
-                activity_due_time = "17:00"
-                create_activity(activity_subject, activity_due_date, activity_due_time, lead_id)
+                create_activity(activity_subject, activity_due_date, lead_id)
 
         return assistant_message, None
 
