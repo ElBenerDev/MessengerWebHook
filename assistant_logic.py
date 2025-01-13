@@ -39,11 +39,15 @@ class EventHandler(AssistantEventHandler):
 
 # Función para convertir hora local a UTC
 def convert_to_utc(local_datetime_str, local_tz_str='America/Argentina/Buenos_Aires'):
-    local_tz = pytz.timezone(local_tz_str)
-    local_datetime = datetime.strptime(local_datetime_str, '%Y-%m-%d %H:%M')
-    local_datetime = local_tz.localize(local_datetime)  # Asignamos la zona horaria local
-    utc_datetime = local_datetime.astimezone(pytz.utc)  # Convertimos a UTC
-    return utc_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')  # Formato ISO 8601 para Pipedrive
+    try:
+        local_tz = pytz.timezone(local_tz_str)
+        local_datetime = datetime.strptime(local_datetime_str, '%Y-%m-%d %H:%M')
+        local_datetime = local_tz.localize(local_datetime)  # Asignamos la zona horaria local
+        utc_datetime = local_datetime.astimezone(pytz.utc)  # Convertimos a UTC
+        return utc_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')  # Formato ISO 8601 para Pipedrive
+    except Exception as e:
+        logger.error(f"Error al convertir a UTC: {e}")
+        return None
 
 # Función de creación de organización, lead y actividad de Pipedrive
 def create_organization(name):
@@ -78,10 +82,15 @@ def create_activity(subject, due_date, lead_id):
     
     # Forzar la hora a las 17:00 (5 PM) sin importar la hora ingresada por el usuario
     forced_due_time = "17:00"  # Hora fija a las 5 PM
-    
+    local_datetime_str = f"{due_date} {forced_due_time}"
+
     # Convertir la hora local a UTC
-    activity_due_time_utc = convert_to_utc(f"{due_date} {forced_due_time}", local_tz_str='America/Argentina/Buenos_Aires')
+    activity_due_time_utc = convert_to_utc(local_datetime_str, local_tz_str='America/Argentina/Buenos_Aires')
     
+    if not activity_due_time_utc:
+        logger.error("Error: No se pudo calcular la hora UTC.")
+        return
+
     activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
     activity_data = {
         'subject': subject,
@@ -91,6 +100,8 @@ def create_activity(subject, due_date, lead_id):
         'duration': '01:00',  # Duración de la actividad
         'lead_id': lead_id
     }
+
+    logger.info(f"Datos enviados a Pipedrive: {activity_data}")
     
     response = requests.post(activity_url, json=activity_data)
     if response.status_code == 201:
@@ -127,7 +138,7 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Una vez obtenida la respuesta del asistente, ejecutamos el flujo de Pipedrive
+        # Ejecutar el flujo de Pipedrive
         organization_name = "Nueva Organización de Ejemplo"
         organization_id = create_organization(organization_name)
 
