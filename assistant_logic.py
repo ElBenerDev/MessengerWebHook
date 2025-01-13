@@ -1,4 +1,4 @@
-from openai import OpenAI
+import openai
 import logging
 import os
 import requests
@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configura tu cliente con la API key desde el entorno
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # ID del asistente
 assistant_id = os.getenv("ASSISTANT_ID", "asst_d2QBbmcrr6vdZgxusPdqNOtY")
@@ -23,8 +23,8 @@ contact_name = None
 contact_phone = None
 activity_due_date = None
 activity_due_time = None
-COMPANY_DOMAIN = "tu_dominio_ejemplo"  # Ajustar a tu dominio de Pipedrive
-PIPEDRIVE_API_KEY = "tu_api_key_ejemplo"  # Ajustar a tu clave de API
+PIPEDRIVE_API_KEY = '8f2492eead4201ac69582ee4f3dfefd13d818b79'
+COMPANY_DOMAIN = 'companiademuestra'
 
 class EventHandler:
     def __init__(self):
@@ -32,12 +32,12 @@ class EventHandler:
         self.message_complete = False
 
     def on_text_created(self, text):
-        if not self.message_complete and text.value not in self.assistant_message:
-            self.assistant_message += text.value
+        if not self.message_complete and text['text'] not in self.assistant_message:
+            self.assistant_message += text['text']
 
     def on_text_delta(self, delta, snapshot):
-        if not self.message_complete and delta.value not in self.assistant_message:
-            self.assistant_message += delta.value
+        if not self.message_complete and delta['text'] not in self.assistant_message:
+            self.assistant_message += delta['text']
 
     def finalize_message(self):
         if not self.message_complete:
@@ -53,23 +53,29 @@ def handle_assistant_response(user_message, user_id):
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
+        # Verificar si ya existe un hilo para este usuario
         if user_id not in user_threads:
-            thread = client.beta.threads.create()
-            user_threads[user_id] = thread.id
-        thread_id = user_threads[user_id]
+            user_threads[user_id] = []  # Iniciar un nuevo hilo para este usuario
 
+        # Agregar el mensaje del usuario al hilo de conversación
+        user_threads[user_id].append({"role": "user", "content": user_message})
+
+        # Crear y manejar la respuesta del asistente
         event_handler = EventHandler()
-        with client.beta.threads.runs.stream(
-            thread_id=thread_id,
-            assistant_id=assistant_id,
-            event_handler=event_handler,
-        ) as stream:
-            stream.until_done()
 
-        assistant_message = event_handler.finalize_message()
+        # Usar OpenAI ChatCompletion para obtener respuestas del asistente
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # Ajustar al modelo que estés usando
+            messages=user_threads[user_id]
+        )
+
+        assistant_message = response['choices'][0]['message']['content'].strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Procesamiento del mensaje del asistente para almacenar datos en las variables
+        # Añadir la respuesta al hilo del usuario
+        user_threads[user_id].append({"role": "assistant", "content": assistant_message})
+
+        # Procesar la respuesta del asistente para almacenar datos
         if "¿Cuál es el nombre del paciente?" in assistant_message:
             contact_name = user_message
         elif "¿Cuál es el teléfono?" in assistant_message:
