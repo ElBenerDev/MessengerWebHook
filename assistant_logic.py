@@ -32,25 +32,24 @@ class EventHandler(AssistantEventHandler):
     def __init__(self):
         super().__init__()
         self.assistant_message = ""
-        self.message_complete = False
 
     @override
     def on_text_created(self, text):
-        if not self.message_complete and text['text'] not in self.assistant_message:
+        if not self.assistant_message.endswith(text['text']):
             self.assistant_message += text['text']
 
     @override
     def on_text_delta(self, delta, snapshot):
-        if not self.message_complete and delta['text'] not in self.assistant_message:
+        if not self.assistant_message.endswith(delta['text']):
             self.assistant_message += delta['text']
 
     def finalize_message(self):
-        if not self.message_complete:
-            self.message_complete = True
         return self.assistant_message.strip()
 
 def handle_assistant_response(user_message, user_id):
-    global contact_name, contact_phone, activity_due_date, activity_due_time
+    """
+    Procesa el mensaje del usuario y devuelve la respuesta generada por el asistente.
+    """
     if not user_message or not user_id:
         logger.error("No se proporcionó un mensaje o ID de usuario válido.")
         return None, "No se proporcionó un mensaje o ID de usuario válido."
@@ -58,17 +57,21 @@ def handle_assistant_response(user_message, user_id):
     logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
 
     try:
-        # Verificar si ya existe un hilo para este usuario
+        # Crear un hilo nuevo si no existe para el usuario
         if user_id not in user_threads:
-            user_threads[user_id] = []  # Iniciar un nuevo hilo para este usuario
+            thread = client.beta.threads.create(assistant_id=assistant_id)
+            user_threads[user_id] = thread['id']
+            logger.info(f"Hilo creado para el usuario {user_id}: {thread['id']}")
 
-        # Agregar el mensaje del usuario al hilo de conversación
-        user_threads[user_id].append({"role": "user", "content": user_message})
+        # Enviar mensaje al hilo existente
+        client.beta.threads.messages.create(
+            thread_id=user_threads[user_id],
+            role="user",
+            content=user_message
+        )
 
-        # Crear y manejar la respuesta del asistente
+        # Manejar la respuesta del asistente
         event_handler = EventHandler()
-
-        # Usar OpenAI ChatCompletion para obtener respuestas del asistente
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
             assistant_id=assistant_id,
@@ -76,25 +79,14 @@ def handle_assistant_response(user_message, user_id):
         ) as stream:
             stream.until_done()
 
-        assistant_message = event_handler.finalize_message().strip()
+        assistant_message = event_handler.finalize_message()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Añadir la respuesta al hilo del usuario
-        user_threads[user_id].append({"role": "assistant", "content": assistant_message})
-
-        # Procesar la respuesta del asistente para almacenar datos
-        if "¿Cuál es el nombre del paciente?" in assistant_message:
-            contact_name = user_message
-        elif "¿Cuál es el teléfono?" in assistant_message:
-            contact_phone = user_message
-        elif "¿Cuándo te gustaría agendar la cita?" in assistant_message:
-            activity_due_date, activity_due_time = user_message.split(" ")  # Suponiendo que se ingresa en formato 'YYYY-MM-DD HH:MM'
-        
         return assistant_message, None
 
     except Exception as e:
-        logger.error(f"Error al generar respuesta: {e}")
-        return None, f"Error al generar respuesta: {e}"
+        logger.error(f"Error al procesar el mensaje: {e}")
+        return None, f"Error al procesar el mensaje: {e}"
 
 # Función para crear contacto
 def create_patient_contact(contact_name, phone=None, email=None):
@@ -127,11 +119,11 @@ def create_patient_lead(contact_id, lead_title, lead_owner_id):
         lead = response.json()
         return lead['data']['id']
     else:
-        print(f"Error al crear el lead: {response.status_code}")
-        print(response.text)
+        logger.error(f"Error al crear el lead: {response.status_code}")
+        logger.error(response.text)
     return None
 
-# Función para verificar actividades existentes
+# Verificar actividades existentes
 def check_existing_appointments(due_date, due_time, duration):
     activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
     response = requests.get(activity_url)
@@ -142,28 +134,26 @@ def check_existing_appointments(due_date, due_time, duration):
                 return True  # Ya existe una actividad en ese horario
     return False
 
-# Función para validar si el horario está dentro del horario laboral
+# Validar si está dentro del horario laboral
 def is_within_working_hours(activity_due_time):
     WORKING_HOURS_START = "09:00"
     WORKING_HOURS_END = "18:00"
     return WORKING_HOURS_START <= activity_due_time <= WORKING_HOURS_END
 
-# Función para crear cita dental (actividad)
+# Crear cita dental
 def create_dental_appointment(lead_id, activity_subject, activity_type, activity_due_date, activity_due_time, activity_duration, activity_note):
-    # Zona horaria de Argentina
     ARGENTINA_TZ = pytz.timezone("America/Argentina/Buenos_Aires")
     
-    # Convertir horario de Argentina a UTC
     local_time = ARGENTINA_TZ.localize(datetime.strptime(f"{activity_due_date} {activity_due_time}", "%Y-%m-%d %H:%M"))
     utc_time = local_time.astimezone(pytz.utc)
-    utc_due_time = utc_time.strftime("%H:%M")  # Devuelve solo la hora en formato UTC
+    utc_due_time = utc_time.strftime("%H:%M")
 
-    if not is_within_working_hours(activity_due_time):  # Verificar en hora local de Argentina
-        print("La cita no se puede crear porque está fuera del horario laboral.")
+    if not is_within_working_hours(activity_due_time):
+        logger.error("La cita está fuera del horario laboral.")
         return
 
     if check_existing_appointments(activity_due_date, utc_due_time, activity_duration):
-        print("La cita no se puede crear porque ya hay una actividad programada en ese horario.")
+        logger.error("Ya existe una actividad en ese horario.")
         return
 
     activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
@@ -171,7 +161,7 @@ def create_dental_appointment(lead_id, activity_subject, activity_type, activity
         'subject': activity_subject,
         'type': activity_type,
         'due_date': activity_due_date,
-        'due_time': utc_due_time,  # Guardar en UTC en Pipedrive
+        'due_time': utc_due_time,
         'duration': activity_duration,
         'lead_id': lead_id,
         'note': activity_note,
@@ -179,22 +169,19 @@ def create_dental_appointment(lead_id, activity_subject, activity_type, activity
 
     response = requests.post(activity_url, json=activity_data)
     if response.status_code == 201:
-        print("Cita dental creada exitosamente!")
+        logger.info("Cita dental creada exitosamente!")
     else:
-        print(f"Error al crear la cita dental: {response.status_code}")
-        print(response.text)
+        logger.error(f"Error al crear la cita dental: {response.status_code}")
+        logger.error(response.text)
 
-# Función principal para crear cita y lead
+# Flujo principal para crear cita y lead
 def create_appointment_and_lead():
-    # Paso 1: Crear un contacto para el paciente
     if contact_name and contact_phone:
         contact_id = create_patient_contact(contact_name, phone=contact_phone)
 
-        # Paso 2: Crear el lead para el paciente
         if contact_id:
-            lead_id = create_patient_lead(contact_id, "Lead para " + contact_name, lead_owner_id=23104380)  # Cambiar el owner_id si es necesario
+            lead_id = create_patient_lead(contact_id, f"Lead para {contact_name}", lead_owner_id=23104380)
 
-            # Paso 3: Crear la cita dental para el paciente
             if lead_id and activity_due_date and activity_due_time:
                 create_dental_appointment(
                     lead_id,
@@ -202,22 +189,20 @@ def create_appointment_and_lead():
                     activity_type="meeting",
                     activity_due_date=activity_due_date,
                     activity_due_time=activity_due_time,
-                    activity_duration="00:30",  # Cambiar la duración si es necesario
+                    activity_duration="00:30",
                     activity_note="Tipo de tratamiento: Revisión dental"
                 )
 
-# Flujo principal para iniciar la interacción con el asistente
+# Flujo de prueba
 if __name__ == "__main__":
-    # Simulamos interacción del usuario para permitir que el asistente manipule las variables
-    user_message = "Juan Pérez"  # Ejemplo de respuesta de usuario
-    user_id = "1234"  # ID de usuario para simulación
+    user_message = "Juan Pérez"
+    user_id = "1234"
     handle_assistant_response(user_message, user_id)
 
-    user_message = "+1234567890"  # Ejemplo de teléfono
+    user_message = "+1234567890"
     handle_assistant_response(user_message, user_id)
 
-    user_message = "2025-01-15 09:00"  # Ejemplo de fecha y hora para la cita
+    user_message = "2025-01-15 09:00"
     handle_assistant_response(user_message, user_id)
 
-    # Ahora procederemos a crear la cita y el lead
     create_appointment_and_lead()
