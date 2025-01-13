@@ -27,8 +27,7 @@ user_context = {}
 # Crear una organización en Pipedrive
 def create_organization(name):
     logger.info(f"Creando organización con el nombre: {name}")
-    # URL de organización con los valores directamente en el código
-    organization_url = 'https://companiademuestra.pipedrive.com/v1/organizations?api_token=8f2492eead4201ac69582ee4f3dfefd13d818b79'
+    organization_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/organizations?api_token={PIPEDRIVE_API_KEY}'
     organization_data = {'name': name}
     response = requests.post(organization_url, json=organization_data)
     logger.debug(f"Respuesta al crear organización: {response.text}")
@@ -43,8 +42,7 @@ def create_organization(name):
 # Crear un lead en Pipedrive
 def create_lead(title, organization_id):
     logger.info(f"Creando lead con título: {title} para la organización ID: {organization_id}")
-    # URL de lead con los valores directamente en el código
-    lead_url = 'https://companiademuestra.pipedrive.com/v1/leads?api_token=8f2492eead4201ac69582ee4f3dfefd13d818b79'
+    lead_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     lead_data = {'title': title, 'organization_id': organization_id}
     response = requests.post(lead_url, json=lead_data)
     logger.debug(f"Respuesta al crear lead: {response.text}")
@@ -59,8 +57,7 @@ def create_lead(title, organization_id):
 # Crear una actividad en Pipedrive
 def create_activity(subject, due_date, due_time, lead_id):
     logger.info(f"Creando actividad con el asunto: {subject} para el lead ID: {lead_id}")
-    # URL de actividad con los valores directamente en el código
-    activity_url = 'https://companiademuestra.pipedrive.com/v1/activities?api_token=8f2492eead4201ac69582ee4f3dfefd13d818b79'
+    activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
     activity_data = {
         'subject': subject,
         'type': 'meeting',
@@ -109,7 +106,6 @@ def extract_user_data(message, context):
     if time:
         context['time'] = time.group(0)
 
-# Procesar mensajes del asistente y crear registros en Pipedrive
 # Procesar mensajes del asistente y crear registros en Pipedrive
 def handle_assistant_response(user_message, user_id):
     try:
@@ -164,8 +160,6 @@ def handle_assistant_response(user_message, user_id):
     except Exception as e:
         logger.error(f"Error en la función handle_assistant_response: {e}")
         return None, str(e)
-
-
 
 # Evento para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
