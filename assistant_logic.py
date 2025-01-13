@@ -1,129 +1,210 @@
 from openai import OpenAI
-from openai import AssistantEventHandler
-from typing_extensions import override
 import logging
 import os
 import requests
+from datetime import datetime
+import pytz
 
 # Configuración de logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuración del cliente OpenAI
+# Configura tu cliente con la API key desde el entorno
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# Configuración de Pipedrive
-PIPEDRIVE_API_KEY = '8f2492eead4201ac69582ee4f3dfefd13d818b79'  # API token de Pipedrive
-COMPANY_DOMAIN = 'companiademuestra'  # Dominio de tu cuenta de Pipedrive
 
 # ID del asistente
 assistant_id = os.getenv("ASSISTANT_ID", "asst_d2QBbmcrr6vdZgxusPdqNOtY")
 
-# Diccionario para almacenar los hilos por usuario
+# Diccionario para almacenar el thread_id de cada usuario
 user_threads = {}
 
-# Crear un manejador de eventos para manejar el stream de respuestas del asistente
-class EventHandler(AssistantEventHandler):
+# Variables globales
+contact_name = None
+contact_phone = None
+activity_due_date = None
+activity_due_time = None
+COMPANY_DOMAIN = "tu_dominio_ejemplo"  # Ajustar a tu dominio de Pipedrive
+PIPEDRIVE_API_KEY = "tu_api_key_ejemplo"  # Ajustar a tu clave de API
+
+class EventHandler:
     def __init__(self):
-        super().__init__()
         self.assistant_message = ""
+        self.message_complete = False
 
-    @override
-    def on_text_created(self, text) -> None:
-        logger.debug(f"Asistente (on_text_created): {text.value}")
-        self.assistant_message = text.value
+    def on_text_created(self, text):
+        if not self.message_complete and text.value not in self.assistant_message:
+            self.assistant_message += text.value
 
-    @override
     def on_text_delta(self, delta, snapshot):
-        logger.debug(f"Delta (on_text_delta): {delta.value}")
-        if not self.assistant_message.endswith(delta.value):
+        if not self.message_complete and delta.value not in self.assistant_message:
             self.assistant_message += delta.value
 
-# Función para crear un lead en Pipedrive
-def create_pipedrive_lead(name, organization=None, value=None):
-    try:
-        if not name:
-            logger.error("El nombre del lead es obligatorio.")
-            return "Error: El nombre del lead es obligatorio."
-        
-        lead_url = f"https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}"
-        lead_data = {
-            "title": name,
-            "organization_name": organization,
-            "value": value,
-        }
-        response = requests.post(lead_url, json=lead_data)
-        
-        if response.status_code == 201:
-            logger.info(f"Lead creado exitosamente: {response.json()}")
-            return "Lead creado exitosamente en Pipedrive."
-        else:
-            logger.error(f"Error al crear el lead: {response.text}")
-            return f"Error al crear el lead: {response.text}"
-    except Exception as e:
-        logger.error(f"Error al interactuar con Pipedrive: {str(e)}")
-        return f"Error al interactuar con Pipedrive: {str(e)}"
+    def finalize_message(self):
+        if not self.message_complete:
+            self.message_complete = True
+        return self.assistant_message.strip()
 
-# Lógica principal del asistente
 def handle_assistant_response(user_message, user_id):
+    global contact_name, contact_phone, activity_due_date, activity_due_time
+    if not user_message or not user_id:
+        logger.error("No se proporcionó un mensaje o ID de usuario válido.")
+        return None, "No se proporcionó un mensaje o ID de usuario válido."
+
+    logger.info(f"Mensaje recibido del usuario {user_id}: {user_message}")
+
     try:
         if user_id not in user_threads:
             thread = client.beta.threads.create()
-            logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
-
-        client.beta.threads.messages.create(
-            thread_id=user_threads[user_id],
-            role="user",
-            content=user_message
-        )
+        thread_id = user_threads[user_id]
 
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
-            thread_id=user_threads[user_id],
+            thread_id=thread_id,
             assistant_id=assistant_id,
             event_handler=event_handler,
         ) as stream:
             stream.until_done()
 
-        assistant_message = event_handler.assistant_message.strip()
+        assistant_message = event_handler.finalize_message()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        if "crear lead" in user_message.lower():
-            name = extract_field(user_message, "nombre")
-            organization = extract_field(user_message, "organización")
-            value = extract_field(user_message, "valor")
-            
-            if value:
-                try:
-                    value = float(value)
-                except ValueError:
-                    logger.warning(f"Valor no válido: {value}. Se ignorará.")
-                    value = None
-
-            pipedrive_response = create_pipedrive_lead(name, organization, value)
-            assistant_message += f"\n\n{pipedrive_response}"
-
+        # Procesamiento del mensaje del asistente para almacenar datos en las variables
+        if "¿Cuál es el nombre del paciente?" in assistant_message:
+            contact_name = user_message
+        elif "¿Cuál es el teléfono?" in assistant_message:
+            contact_phone = user_message
+        elif "¿Cuándo te gustaría agendar la cita?" in assistant_message:
+            activity_due_date, activity_due_time = user_message.split(" ")  # Suponiendo que se ingresa en formato 'YYYY-MM-DD HH:MM'
+        
         return assistant_message, None
 
     except Exception as e:
-        logger.error(f"Error al procesar el mensaje: {str(e)}")
-        return None, f"Error al procesar el mensaje: {str(e)}"
+        logger.error(f"Error al generar respuesta: {e}")
+        return None, f"Error al generar respuesta: {e}"
 
-def extract_field(message, field_name):
-    """
-    Extrae un campo específico basado en el formato esperado.
-    :param message: str, el mensaje del usuario
-    :param field_name: str, el nombre del campo a buscar
-    :return: str | None, el valor extraído o None si no se encuentra
-    """
-    try:
-        field_lower = field_name.lower() + ":"
-        if field_lower in message.lower():
-            start = message.lower().index(field_lower) + len(field_lower)
-            value = message[start:].split("\n")[0].strip()
-            logger.debug(f"Campo extraído '{field_name}': {value}")
-            return value
-    except Exception as e:
-        logger.warning(f"Error al extraer el campo '{field_name}': {str(e)}")
+# Función para crear contacto
+def create_patient_contact(contact_name, phone=None, email=None):
+    contact_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/persons?api_token={PIPEDRIVE_API_KEY}'
+    contact_data = {
+        'name': contact_name,
+    }
+    if phone:
+        contact_data['phone'] = phone
+    if email:
+        contact_data['email'] = email
+
+    response = requests.post(contact_url, json=contact_data)
+    if response.status_code == 201:
+        contact = response.json()
+        return contact['data']['id']
     return None
+
+# Función para crear lead
+def create_patient_lead(contact_id, lead_title, lead_owner_id):
+    lead_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
+    lead_data = {
+        'title': lead_title,
+        'person_id': contact_id,
+        'owner_id': lead_owner_id,
+    }
+
+    response = requests.post(lead_url, json=lead_data)
+    if response.status_code == 201:
+        lead = response.json()
+        return lead['data']['id']
+    else:
+        print(f"Error al crear el lead: {response.status_code}")
+        print(response.text)
+    return None
+
+# Función para verificar actividades existentes
+def check_existing_appointments(due_date, due_time, duration):
+    activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
+    response = requests.get(activity_url)
+    if response.status_code == 200:
+        activities = response.json().get('data', [])
+        for activity in activities:
+            if activity['due_date'] == due_date and activity['due_time'] == due_time:
+                return True  # Ya existe una actividad en ese horario
+    return False
+
+# Función para validar si el horario está dentro del horario laboral
+def is_within_working_hours(activity_due_time):
+    WORKING_HOURS_START = "09:00"
+    WORKING_HOURS_END = "18:00"
+    return WORKING_HOURS_START <= activity_due_time <= WORKING_HOURS_END
+
+# Función para crear cita dental (actividad)
+def create_dental_appointment(lead_id, activity_subject, activity_type, activity_due_date, activity_due_time, activity_duration, activity_note):
+    # Zona horaria de Argentina
+    ARGENTINA_TZ = pytz.timezone("America/Argentina/Buenos_Aires")
+    
+    # Convertir horario de Argentina a UTC
+    local_time = ARGENTINA_TZ.localize(datetime.strptime(f"{activity_due_date} {activity_due_time}", "%Y-%m-%d %H:%M"))
+    utc_time = local_time.astimezone(pytz.utc)
+    utc_due_time = utc_time.strftime("%H:%M")  # Devuelve solo la hora en formato UTC
+
+    if not is_within_working_hours(activity_due_time):  # Verificar en hora local de Argentina
+        print("La cita no se puede crear porque está fuera del horario laboral.")
+        return
+
+    if check_existing_appointments(activity_due_date, utc_due_time, activity_duration):
+        print("La cita no se puede crear porque ya hay una actividad programada en ese horario.")
+        return
+
+    activity_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/activities?api_token={PIPEDRIVE_API_KEY}'
+    activity_data = {
+        'subject': activity_subject,
+        'type': activity_type,
+        'due_date': activity_due_date,
+        'due_time': utc_due_time,  # Guardar en UTC en Pipedrive
+        'duration': activity_duration,
+        'lead_id': lead_id,
+        'note': activity_note,
+    }
+
+    response = requests.post(activity_url, json=activity_data)
+    if response.status_code == 201:
+        print("Cita dental creada exitosamente!")
+    else:
+        print(f"Error al crear la cita dental: {response.status_code}")
+        print(response.text)
+
+# Función principal para crear cita y lead
+def create_appointment_and_lead():
+    # Paso 1: Crear un contacto para el paciente
+    if contact_name and contact_phone:
+        contact_id = create_patient_contact(contact_name, phone=contact_phone)
+
+        # Paso 2: Crear el lead para el paciente
+        if contact_id:
+            lead_id = create_patient_lead(contact_id, "Lead para " + contact_name, lead_owner_id=23104380)  # Cambiar el owner_id si es necesario
+
+            # Paso 3: Crear la cita dental para el paciente
+            if lead_id and activity_due_date and activity_due_time:
+                create_dental_appointment(
+                    lead_id,
+                    activity_subject=f'Cita de Revisión dental para {contact_name}',
+                    activity_type="meeting",
+                    activity_due_date=activity_due_date,
+                    activity_due_time=activity_due_time,
+                    activity_duration="00:30",  # Cambiar la duración si es necesario
+                    activity_note="Tipo de tratamiento: Revisión dental"
+                )
+
+# Flujo principal para iniciar la interacción con el asistente
+if __name__ == "__main__":
+    # Simulamos interacción del usuario para permitir que el asistente manipule las variables
+    user_message = "Juan Pérez"  # Ejemplo de respuesta de usuario
+    user_id = "1234"  # ID de usuario para simulación
+    handle_assistant_response(user_message, user_id)
+
+    user_message = "+1234567890"  # Ejemplo de teléfono
+    handle_assistant_response(user_message, user_id)
+
+    user_message = "2025-01-15 09:00"  # Ejemplo de fecha y hora para la cita
+    handle_assistant_response(user_message, user_id)
+
+    # Ahora procederemos a crear la cita y el lead
+    create_appointment_and_lead()
