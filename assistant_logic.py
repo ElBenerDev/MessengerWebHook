@@ -62,22 +62,41 @@ def extract_user_info(user_message):
 
     return contact_name, contact_phone, contact_email
 
+# Función para crear un nuevo contacto en Pipedrive
+def create_pipedrive_contact(contact_name, contact_phone, contact_email):
+    url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/persons?api_token={PIPEDRIVE_API_KEY}'
+    headers = {
+        'Content-Type': 'application/json',
+    }
+    data = {
+        'name': contact_name,
+        'phone': contact_phone,
+        'email': contact_email,
+    }
+
+    response = requests.post(url, headers=headers, json=data)
+    if response.status_code == 201:
+        contact_id = response.json().get('data', {}).get('id')
+        logger.info(f"Contacto creado exitosamente para {contact_name}")
+        return contact_id
+    else:
+        logger.error(f"Error al crear el contacto: {response.text}")
+        return None
+
 # Función para crear un nuevo lead en Pipedrive
-def create_pipedrive_lead(contact_name, contact_phone, contact_email, service, date, time):
-    url = f'https://{COMPANY_DOMAIN}.pipedrive.com/api/v1/leads?api_token={PIPEDRIVE_API_KEY}'
+def create_pipedrive_lead(contact_id, service, date, time):
+    url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     headers = {
         'Content-Type': 'application/json',
     }
     data = {
         'title': f"Lead para {contact_name}",
-        'person_name': contact_name,
-        'phone': contact_phone,
-        'email': contact_email,
+        'person_id': contact_id,  # Se usa 'person_id' en lugar de 'person_name'
         'custom_service': service,
         'custom_date': f"{date} {time}",
     }
 
-    response = requests.post(url, headers=headers, json=data)  # Nota el uso de `json=data`
+    response = requests.post(url, headers=headers, json=data)
     if response.status_code == 201:
         logger.info(f"Lead creado exitosamente para {contact_name}")
         return response.json()
@@ -151,8 +170,11 @@ def handle_assistant_response(user_message, user_id):
             date_time_str = date_match.group(1) if date_match else "Fecha no especificada"
             date_str, time_str = date_time_str.split(" a las ")
 
-            # Crear lead en Pipedrive
-            create_pipedrive_lead(contact_name, contact_phone, contact_email, service, date_str, time_str)
+            # Crear contacto en Pipedrive
+            contact_id = create_pipedrive_contact(contact_name, contact_phone, contact_email)
+            if contact_id:
+                # Crear lead en Pipedrive
+                create_pipedrive_lead(contact_id, service, date_str, time_str)
 
         return assistant_message, None
 
