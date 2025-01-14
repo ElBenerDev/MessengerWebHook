@@ -31,7 +31,7 @@ ARGENTINA_TZ = pytz.timezone("America/Argentina/Buenos_Aires")
 WORKING_HOURS_START = "09:00"
 WORKING_HOURS_END = "18:00"
 
-# Clase EventHandler para manejar los eventos de OpenAI
+# Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
         super().__init__()
