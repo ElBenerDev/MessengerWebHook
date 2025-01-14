@@ -194,7 +194,6 @@ def handle_assistant_response(user_message, user_id):
             stream.until_done()
 
         assistant_message = event_handler.assistant_message.strip()
-        logger.info(f"Mensaje del asistente: {assistant_message}")
 
         # Almacenamos la información del usuario
         event_handler.store_user_info(user_message)
