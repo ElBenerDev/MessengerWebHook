@@ -62,6 +62,26 @@ def extract_user_info(user_message):
 
     return contact_name, contact_phone, contact_email
 
+# Función para crear un nuevo lead en Pipedrive
+def create_pipedrive_lead(contact_name, contact_phone, contact_email, service, date, time):
+    url = f'https://{COMPANY_DOMAIN}.pipedrive.com/api/v1/leads?api_token={PIPEDRIVE_API_KEY}'
+    data = {
+        'title': f"Lead para {contact_name}",
+        'person_name': contact_name,
+        'phone': contact_phone,
+        'email': contact_email,
+        'custom_service': service,
+        'custom_date': f"{date} {time}",
+    }
+
+    response = requests.post(url, data=data)
+    if response.status_code == 201:
+        logger.info(f"Lead creado exitosamente para {contact_name}")
+        return response.json()
+    else:
+        logger.error(f"Error al crear el lead: {response.text}")
+        return None
+
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
     def __init__(self):
@@ -116,7 +136,19 @@ def handle_assistant_response(user_message, user_id):
 
         if contact_name and contact_phone and contact_email:
             logger.info(f"Datos extraídos: Nombre: {contact_name}, Teléfono: {contact_phone}, Correo: {contact_email}")
-            # Aquí puedes agregar la lógica para crear el contacto, lead y citas como en tu código original
+            
+            # Extraer servicio y fecha
+            service_pattern = r"servicio:\s*([A-Za-z\s]+)"
+            date_pattern = r"(\d{1,2} de \w+ a las \d{1,2}:\d{2})"
+            service_match = re.search(service_pattern, user_message, re.IGNORECASE)
+            date_match = re.search(date_pattern, user_message)
+
+            service = service_match.group(1) if service_match else "Servicio no especificado"
+            date_time_str = date_match.group(1) if date_match else "Fecha no especificada"
+            date_str, time_str = date_time_str.split(" a las ")
+
+            # Crear lead en Pipedrive
+            create_pipedrive_lead(contact_name, contact_phone, contact_email, service, date_str, time_str)
 
         return assistant_message, None
 
@@ -126,7 +158,7 @@ def handle_assistant_response(user_message, user_id):
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    user_message = "Hola, soy Bernardo Ramirez, mi teléfono es +54 9 11 2345 6789 y mi correo es bernardo@example.com. Quiero agendar una cita mañana por la tarde para una limpieza dental."
+    user_message = "Hola, soy Claudia, mi teléfono es 1234567890 y mi correo es jsjd@gmail.com. Quiero agendar una cita para una limpieza dental el 16 de enero a las 10:00."
     response, error = handle_assistant_response(user_message, "user_123")
     if error:
         print(f"Error: {error}")
