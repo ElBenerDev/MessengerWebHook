@@ -131,11 +131,16 @@ def extract_user_info(user_message):
 
 
 # Procesar respuesta del asistente y registrar cita
+# Diccionario para almacenar la información del usuario y el estado del proceso
+user_data = {}
+
 def handle_assistant_response(user_message, user_id):
     try:
+        # Si no hay información previa del usuario, iniciar un nuevo hilo
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             user_threads[user_id] = thread.id
+            user_data[user_id] = {"name": None, "phone": None, "email": None, "appointment_date": None, "appointment_time": None, "lead_created": False}
 
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
@@ -159,27 +164,39 @@ def handle_assistant_response(user_message, user_id):
         activity_due_date = "2025-01-15"  # Simula un valor válido para pruebas
         activity_due_time = "15:00"  # Simula un valor válido para pruebas
 
-        # Validación básica
-        if not contact_name or not activity_due_date or not activity_due_time:
-            raise ValueError("Faltan datos requeridos para crear la cita.")
+        # Actualizamos los datos del usuario
+        user_data[user_id]["name"] = contact_name or user_data[user_id]["name"]
+        user_data[user_id]["phone"] = contact_phone or user_data[user_id]["phone"]
+        user_data[user_id]["email"] = contact_email or user_data[user_id]["email"]
+        user_data[user_id]["appointment_date"] = activity_due_date
+        user_data[user_id]["appointment_time"] = activity_due_time
 
-        contact_id = create_patient_contact(contact_name, phone=contact_phone, email=contact_email)
-        if contact_id:
-            lead_id = create_patient_lead(contact_id, f"Lead para {contact_name}", get_owner_id())
-            if lead_id:
-                create_dental_appointment(
-                    lead_id,
-                    f'Cita de Revisión dental para {contact_name}',
-                    "meeting",
-                    activity_due_date,
-                    activity_due_time,
-                    "00:30",
-                    "Tipo de tratamiento: Revisión dental",
-                )
+        # Comprobamos si se tiene toda la información necesaria
+        if all(user_data[user_id].values()) and not user_data[user_id]["lead_created"]:
+            # Si la información está completa, creamos el contacto, el lead y la cita
+            contact_id = create_patient_contact(user_data[user_id]["name"], phone=user_data[user_id]["phone"], email=user_data[user_id]["email"])
+            if contact_id:
+                lead_id = create_patient_lead(contact_id, f"Lead para {user_data[user_id]['name']}", get_owner_id())
+                if lead_id:
+                    create_dental_appointment(
+                        lead_id,
+                        f'Cita de Revisión dental para {user_data[user_id]["name"]}',
+                        "meeting",
+                        user_data[user_id]["appointment_date"],
+                        user_data[user_id]["appointment_time"],
+                        "00:30",
+                        "Tipo de tratamiento: Revisión dental",
+                    )
+                    user_data[user_id]["lead_created"] = True
+                    logger.info("Lead y cita creados exitosamente!")
+                    return assistant_message, None
+            else:
+                logger.error("No se pudo crear el contacto.")
+                return assistant_message, "Hubo un problema al crear el contacto."
+
         else:
-            logger.error("No se pudo crear el contacto.")
-
-        return assistant_message, None
+            logger.info("Esperando más información del usuario.")
+            return assistant_message, None
 
     except ValueError as ve:
         logger.error(f"Error de validación: {ve}")
@@ -187,6 +204,8 @@ def handle_assistant_response(user_message, user_id):
     except Exception as e:
         logger.error(f"Error al procesar el mensaje: {e}")
         return None, f"Error interno: {e}"
+
+
 
 
 # Ejemplo de uso
