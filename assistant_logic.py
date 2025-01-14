@@ -133,14 +133,16 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje del asistente: {assistant_message}")
 
-        # Aquí puedes procesar `assistant_message` para extraer datos y crear una cita
-        # Por simplicidad, asume que se han extraído todas las variables requeridas
+        # Simulación de extracción de datos (debes reemplazar esto con tu lógica real de extracción)
+        contact_name = "Extraído del mensaje"  # Actualiza esto
+        contact_phone = "Extraído del mensaje"  # Actualiza esto
+        contact_email = "Extraído del mensaje"  # Actualiza esto
+        activity_due_date = "2025-01-15"  # Simula un valor válido para pruebas
+        activity_due_time = "15:00"  # Simula un valor válido para pruebas
 
-        contact_name = "Extraído del mensaje"
-        contact_phone = "Extraído del mensaje"
-        contact_email = "Extraído del mensaje"
-        activity_due_date = "Extraído del mensaje"
-        activity_due_time = "Extraído del mensaje"
+        # Validación básica
+        if not contact_name or not activity_due_date or not activity_due_time:
+            raise ValueError("Faltan datos requeridos para crear la cita.")
 
         contact_id = create_patient_contact(contact_name, phone=contact_phone, email=contact_email)
         if contact_id:
@@ -155,9 +157,16 @@ def handle_assistant_response(user_message, user_id):
                     "00:30",
                     "Tipo de tratamiento: Revisión dental",
                 )
+        else:
+            logger.error("No se pudo crear el contacto.")
 
+    except ValueError as ve:
+        logger.error(f"Error de validación: {ve}")
+        return f"Hubo un problema con los datos proporcionados: {ve}"
     except Exception as e:
         logger.error(f"Error al procesar el mensaje: {e}")
+        return f"Error interno: {e}"
+
 
 
 # Ejemplo de uso
