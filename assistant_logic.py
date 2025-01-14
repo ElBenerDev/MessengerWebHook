@@ -84,7 +84,7 @@ def create_pipedrive_contact(contact_name, contact_phone, contact_email):
         return None
 
 # Función para crear un nuevo lead en Pipedrive
-def create_pipedrive_lead(contact_id, service, date, time):
+def create_pipedrive_lead(contact_id):
     # Crear el lead sin el campo 'status'
     url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     headers = {
@@ -99,30 +99,11 @@ def create_pipedrive_lead(contact_id, service, date, time):
     if response.status_code == 201:
         lead_id = response.json().get('data', {}).get('id')
         logger.info(f"Lead creado exitosamente para {contact_name}")
-
-        # Ahora actualizamos el estado del lead
-        update_lead_status(lead_id)
-        
         return response.json()
     else:
         logger.error(f"Error al crear el lead: {response.text}")
         return None
 
-# Función para actualizar el estado del lead
-def update_lead_status(lead_id):
-    url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads/{lead_id}?api_token={PIPEDRIVE_API_KEY}'
-    headers = {
-        'Content-Type': 'application/json',
-    }
-    data = {
-        'status': 'open',  # Cambiar el estado del lead a 'open', por ejemplo
-    }
-
-    response = requests.put(url, headers=headers, json=data)
-    if response.status_code == 200:
-        logger.info(f"Estado del lead {lead_id} actualizado a 'open'")
-    else:
-        logger.error(f"Error al actualizar el estado del lead: {response.text}")
 
 
 
