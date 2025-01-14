@@ -84,6 +84,7 @@ def create_pipedrive_contact(contact_name, contact_phone, contact_email):
         return None
 
 # Función para crear un nuevo lead en Pipedrive
+# Función para crear un nuevo lead en Pipedrive
 def create_pipedrive_lead(contact_id, service, date, time):
     url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     headers = {
@@ -92,8 +93,7 @@ def create_pipedrive_lead(contact_id, service, date, time):
     data = {
         'title': f"Lead para {contact_name}",
         'person_id': contact_id,  # Se usa 'person_id' en lugar de 'person_name'
-        'custom_service': service,
-        'custom_date': f"{date} {time}",
+        'status': 'open',  # Estado del lead, puede ser 'open', 'won', 'lost', etc.
     }
 
     response = requests.post(url, headers=headers, json=data)
@@ -103,6 +103,7 @@ def create_pipedrive_lead(contact_id, service, date, time):
     else:
         logger.error(f"Error al crear el lead: {response.text}")
         return None
+
 
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
