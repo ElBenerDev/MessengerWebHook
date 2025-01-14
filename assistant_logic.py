@@ -155,9 +155,18 @@ def handle_assistant_response(user_message, user_id):
         # Verificar si hay una ejecución activa en el hilo
         active_runs = client.beta.threads.runs.list(thread_id=thread_id)
         if active_runs and active_runs.data:
-            run_id = active_runs.data[0].id
-            logger.warning(f"Ejecutando run {run_id} en hilo {thread_id}. Esperando a que termine...")
-            client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
+            for run in active_runs.data:
+                if run.status != "completed":
+                    run_id = run.id
+                    logger.warning(f"Ejecutando run {run_id} en hilo {thread_id}. Intentando cancelar...")
+                    try:
+                        client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
+                        logger.info(f"Run {run_id} cancelado exitosamente.")
+                    except Exception as cancel_error:
+                        logger.error(f"No se pudo cancelar el run {run_id}: {cancel_error}")
+                else:
+                    logger.info(f"El run {run.id} ya está completado, no se requiere cancelación.")
+
 
 
         # Enviar el mensaje del usuario al hilo existente
