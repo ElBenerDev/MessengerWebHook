@@ -3,7 +3,6 @@ from datetime import datetime
 import pytz
 import requests
 from openai import OpenAI
-from openai import AssistantEventHandler
 from typing_extensions import override
 import logging
 import os
@@ -32,22 +31,14 @@ ARGENTINA_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 # Año fijo
 FIXED_YEAR = 2025
 
-# --- Variables al inicio del código ---
-
-# Datos aleatorios o predeterminados para el contacto
-DEFAULT_CONTACT_NAME = "Bernardo Ramirez"  # Nombre del contacto
-DEFAULT_CONTACT_PHONE = "+54 9 11 2345 6789"  # Teléfono del contacto
-DEFAULT_CONTACT_EMAIL = "bernardo@example.com"  # Correo electrónico del contacto
-
-# Datos aleatorios o predeterminados para la cita
-DEFAULT_APPOINTMENT_DATE = "2025-01-15"  # Fecha de la cita
-DEFAULT_APPOINTMENT_TIME = "15:00"  # Hora de la cita
-DEFAULT_APPOINTMENT_DURATION = "00:30"  # Duración de la cita
-DEFAULT_TREATMENT_TYPE = "Revisión dental"  # Tipo de tratamiento
-DEFAULT_ACTIVITY_TYPE = "meeting"  # Tipo de actividad en Pipedrive
-DEFAULT_LEAD_TITLE = "Lead para {name}"  # Título del lead
-
-# --- Fin de las variables configurables ---
+# Variables de datos de usuario
+contact_name = None
+contact_phone = None
+contact_email = None
+activity_due_date = "2025-01-15"  # Fecha fija de la cita
+activity_due_time = "15:00"  # Hora fija para la cita
+appointment_duration = "00:30"  # Duración de la cita
+activity_note = "Tipo de tratamiento: Revisión dental"  # Nota de la cita
 
 # Función para convertir horario de Argentina a UTC
 def convert_to_utc(date_str, time_str):
@@ -110,21 +101,6 @@ def create_dental_appointment(lead_id, activity_subject, activity_type, activity
     else:
         logger.error(f"Error al crear la cita dental: {response.status_code}, {response.text}")
 
-# Manejador de eventos para el asistente
-class EventHandler(AssistantEventHandler):
-    def __init__(self):
-        super().__init__()
-        self.assistant_message = ""
-
-    @override
-    def on_text_created(self, text) -> None:
-        self.assistant_message = text.value
-
-    @override
-    def on_text_delta(self, delta, snapshot):
-        if not self.assistant_message.endswith(delta.value):
-            self.assistant_message += delta.value
-
 # Función para extraer información del mensaje del usuario
 def extract_user_info(user_message):
     # Expresiones regulares para extraer nombre, teléfono y correo
@@ -144,11 +120,21 @@ def extract_user_info(user_message):
 
     return contact_name, contact_phone, contact_email
 
+# Definir el manejador de eventos
+class EventHandler:
+    def __init__(self):
+        self.assistant_message = None
+
+    def handle_message(self, message):
+        self.assistant_message = message['text']
+
 # Procesar respuesta del asistente y registrar cita
 # Diccionario para almacenar la información del usuario y el estado del proceso
 user_data = {}
 
 def handle_assistant_response(user_message, user_id):
+    global contact_name, contact_phone, contact_email, activity_due_date, activity_due_time
+
     try:
         # Si no hay información previa del usuario, iniciar un nuevo hilo
         if user_id not in user_threads:
@@ -163,6 +149,8 @@ def handle_assistant_response(user_message, user_id):
         )
 
         event_handler = EventHandler()
+
+        # Aquí se está manejando el flujo del asistente
         with client.beta.threads.runs.stream(
             thread_id=user_threads[user_id],
             assistant_id=assistant_id,
@@ -175,16 +163,6 @@ def handle_assistant_response(user_message, user_id):
 
         # Extraer información del mensaje
         contact_name, contact_phone, contact_email = extract_user_info(user_message)
-        activity_due_date = DEFAULT_APPOINTMENT_DATE  # Usar valor predeterminado
-        activity_due_time = DEFAULT_APPOINTMENT_TIME  # Usar valor predeterminado
-
-        # Si no hay datos, asignamos valores predeterminados
-        if not contact_name:
-            contact_name = DEFAULT_CONTACT_NAME
-        if not contact_phone:
-            contact_phone = DEFAULT_CONTACT_PHONE
-        if not contact_email:
-            contact_email = DEFAULT_CONTACT_EMAIL
 
         # Actualizamos los datos del usuario
         user_data[user_id]["name"] = contact_name
@@ -193,7 +171,7 @@ def handle_assistant_response(user_message, user_id):
         user_data[user_id]["appointment_date"] = activity_due_date
         user_data[user_id]["appointment_time"] = activity_due_time
 
-        # Comprobamos si se tiene toda la información necesaria
+        # Verificamos si la información está completa
         if all(user_data[user_id].values()) and not user_data[user_id]["lead_created"]:
             # Si la información está completa, creamos el contacto, el lead y la cita
             contact_id = create_patient_contact(user_data[user_id]["name"], phone=user_data[user_id]["phone"], email=user_data[user_id]["email"])
@@ -203,11 +181,11 @@ def handle_assistant_response(user_message, user_id):
                     create_dental_appointment(
                         lead_id,
                         f'Cita de Revisión dental para {user_data[user_id]["name"]}',
-                        DEFAULT_ACTIVITY_TYPE,
+                        "meeting",
                         user_data[user_id]["appointment_date"],
                         user_data[user_id]["appointment_time"],
-                        DEFAULT_APPOINTMENT_DURATION,
-                        f"Tipo de tratamiento: {DEFAULT_TREATMENT_TYPE}",
+                        "00:30",
+                        "Tipo de tratamiento: Revisión dental",
                     )
                     user_data[user_id]["lead_created"] = True
                     logger.info("Lead y cita creados exitosamente!")
