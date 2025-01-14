@@ -83,7 +83,6 @@ def create_pipedrive_contact(contact_name, contact_phone, contact_email):
         logger.error(f"Error al crear el contacto: {response.text}")
         return None
 
-# Función para crear un nuevo lead en Pipedrive
 def create_pipedrive_lead(contact_id, service, date, time):
     url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     headers = {
@@ -95,12 +94,17 @@ def create_pipedrive_lead(contact_id, service, date, time):
         'date': f"{date} {time}",  # Usamos la fecha y hora del mensaje
     }
 
-    response = requests.post(url, headers=headers, json=data)
-    if response.status_code == 201:
-        logger.info(f"Lead creado exitosamente para {service}")
-        return response.json()
-    else:
-        logger.error(f"Error al crear el lead: {response.text}")
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()  # Asegura que se manejen los errores HTTP
+        if response.status_code == 201:
+            logger.info(f"Lead creado exitosamente para {service}")
+            return response.json()
+        else:
+            logger.error(f"Error al crear el lead: {response.json()}")
+            return None
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error de conexión al crear el lead: {e}")
         return None
 
 
