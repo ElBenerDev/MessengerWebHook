@@ -84,8 +84,7 @@ def create_pipedrive_contact(contact_name, contact_phone, contact_email):
         return None
 
 # Función para crear un nuevo lead en Pipedrive
-def create_pipedrive_lead(contact_id):
-    # Crear el lead sin el campo 'status'
+def create_pipedrive_lead(contact_id, service, date, time):
     url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     headers = {
         'Content-Type': 'application/json',
@@ -93,11 +92,12 @@ def create_pipedrive_lead(contact_id):
     data = {
         'title': f"Lead para {contact_name}",
         'person_id': contact_id,  # Se usa 'person_id' en lugar de 'person_name'
+        'custom_service': service,  # Asegúrate de usar el nombre correcto del campo si es necesario
+        'custom_date': f"{date} {time}",
     }
 
     response = requests.post(url, headers=headers, json=data)
     if response.status_code == 201:
-        lead_id = response.json().get('data', {}).get('id')
         logger.info(f"Lead creado exitosamente para {contact_name}")
         return response.json()
     else:
@@ -124,14 +124,8 @@ class EventHandler(AssistantEventHandler):
         if not self.assistant_message.endswith(delta.value):
             self.assistant_message += delta.value
 
-# Lógica principal del asistente
+# Lógica principal del asistente (modificada)
 def handle_assistant_response(user_message, user_id):
-    """
-    Procesa el mensaje del usuario y devuelve una respuesta generada por el asistente.
-    :param user_message: str, mensaje del usuario
-    :param user_id: str, identificador único del usuario
-    :return: (str, str | None) respuesta generada, error (si ocurre)
-    """
     try:
         if user_id not in user_threads:
             thread = client.beta.threads.create()
