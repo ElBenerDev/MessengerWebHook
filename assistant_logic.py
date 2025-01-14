@@ -90,19 +90,19 @@ def create_pipedrive_lead(contact_id, service, date, time):
         'Content-Type': 'application/json',
     }
     data = {
-        'title': f"Lead para {contact_name}",
-        'person_id': contact_id,  # Se usa 'person_id' en lugar de 'person_name'
-        'custom_service': service,  # Asegúrate de usar el nombre correcto del campo si es necesario
-        'custom_date': f"{date} {time}",
+        'title': f"Cita para {service}",  # Usamos el servicio para el título del lead
+        'person_id': contact_id,  # El ID del contacto
+        'date': f"{date} {time}",  # Usamos la fecha y hora del mensaje
     }
 
     response = requests.post(url, headers=headers, json=data)
     if response.status_code == 201:
-        logger.info(f"Lead creado exitosamente para {contact_name}")
+        logger.info(f"Lead creado exitosamente para {service}")
         return response.json()
     else:
         logger.error(f"Error al crear el lead: {response.text}")
         return None
+
 
 
 
