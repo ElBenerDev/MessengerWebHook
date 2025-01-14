@@ -32,6 +32,23 @@ ARGENTINA_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
 # Año fijo
 FIXED_YEAR = 2025
 
+# --- Variables al inicio del código ---
+
+# Datos aleatorios o predeterminados para el contacto
+DEFAULT_CONTACT_NAME = "Bernardo Ramirez"  # Nombre del contacto
+DEFAULT_CONTACT_PHONE = "+54 9 11 2345 6789"  # Teléfono del contacto
+DEFAULT_CONTACT_EMAIL = "bernardo@example.com"  # Correo electrónico del contacto
+
+# Datos aleatorios o predeterminados para la cita
+DEFAULT_APPOINTMENT_DATE = "2025-01-15"  # Fecha de la cita
+DEFAULT_APPOINTMENT_TIME = "15:00"  # Hora de la cita
+DEFAULT_APPOINTMENT_DURATION = "00:30"  # Duración de la cita
+DEFAULT_TREATMENT_TYPE = "Revisión dental"  # Tipo de tratamiento
+DEFAULT_ACTIVITY_TYPE = "meeting"  # Tipo de actividad en Pipedrive
+DEFAULT_LEAD_TITLE = "Lead para {name}"  # Título del lead
+
+# --- Fin de las variables configurables ---
+
 # Función para convertir horario de Argentina a UTC
 def convert_to_utc(date_str, time_str):
     local_time = ARGENTINA_TZ.localize(datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M"))
@@ -158,16 +175,16 @@ def handle_assistant_response(user_message, user_id):
 
         # Extraer información del mensaje
         contact_name, contact_phone, contact_email = extract_user_info(user_message)
-        activity_due_date = "2025-01-15"  # Simula un valor válido para pruebas
-        activity_due_time = "15:00"  # Simula un valor válido para pruebas
+        activity_due_date = DEFAULT_APPOINTMENT_DATE  # Usar valor predeterminado
+        activity_due_time = DEFAULT_APPOINTMENT_TIME  # Usar valor predeterminado
 
-        # Aquí estamos generando datos aleatorios para el resto de los campos
+        # Si no hay datos, asignamos valores predeterminados
         if not contact_name:
-            contact_name = f"Usuario {random.randint(1, 100)}"
+            contact_name = DEFAULT_CONTACT_NAME
         if not contact_phone:
-            contact_phone = f"+54 9 11 {random.randint(1000, 9999)} {random.randint(1000, 9999)}"
+            contact_phone = DEFAULT_CONTACT_PHONE
         if not contact_email:
-            contact_email = f"user{random.randint(1, 100)}@example.com"
+            contact_email = DEFAULT_CONTACT_EMAIL
 
         # Actualizamos los datos del usuario
         user_data[user_id]["name"] = contact_name
@@ -186,11 +203,11 @@ def handle_assistant_response(user_message, user_id):
                     create_dental_appointment(
                         lead_id,
                         f'Cita de Revisión dental para {user_data[user_id]["name"]}',
-                        "meeting",
+                        DEFAULT_ACTIVITY_TYPE,
                         user_data[user_id]["appointment_date"],
                         user_data[user_id]["appointment_time"],
-                        "00:30",
-                        "Tipo de tratamiento: Revisión dental",
+                        DEFAULT_APPOINTMENT_DURATION,
+                        f"Tipo de tratamiento: {DEFAULT_TREATMENT_TYPE}",
                     )
                     user_data[user_id]["lead_created"] = True
                     logger.info("Lead y cita creados exitosamente!")
