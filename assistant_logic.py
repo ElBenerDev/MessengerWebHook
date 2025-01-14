@@ -42,12 +42,13 @@ def convert_to_utc(date_str, time_str):
 def get_owner_id():
     url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/users?api_token={PIPEDRIVE_API_KEY}'
     response = requests.get(url)
+    logger.info(f"Respuesta de obtener ID del propietario: {response.status_code}, {response.text}")
     if response.status_code == 200:
         users_data = response.json().get('data', [])
         for user in users_data:
             if user.get('active_flag') == 1:
                 return user['id']
-    logger.error(f"Error al obtener el ID del propietario: {response.status_code}")
+    logger.error(f"Error al obtener el ID del propietario: {response.status_code}, {response.text}")
     return None
 
 # Función para crear contacto
@@ -55,9 +56,10 @@ def create_patient_contact(contact_name, phone=None, email=None):
     contact_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/persons?api_token={PIPEDRIVE_API_KEY}'
     contact_data = {'name': contact_name, 'phone': phone, 'email': email}
     response = requests.post(contact_url, json=contact_data)
+    logger.info(f"Respuesta de crear contacto: {response.status_code}, {response.text}")
     if response.status_code == 201:
         return response.json().get('data', {}).get('id')
-    logger.error(f"Error al crear el contacto: {response.status_code}")
+    logger.error(f"Error al crear el contacto: {response.status_code}, {response.text}")
     return None
 
 # Función para crear lead
@@ -65,9 +67,10 @@ def create_patient_lead(contact_id, lead_title, lead_owner_id):
     lead_url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     lead_data = {'title': lead_title, 'person_id': contact_id, 'owner_id': lead_owner_id}
     response = requests.post(lead_url, json=lead_data)
+    logger.info(f"Respuesta de crear lead: {response.status_code}, {response.text}")
     if response.status_code == 201:
         return response.json().get('data', {}).get('id')
-    logger.error(f"Error al crear el lead: {response.status_code}")
+    logger.error(f"Error al crear el lead: {response.status_code}, {response.text}")
     return None
 
 # Función para crear cita dental
@@ -84,10 +87,11 @@ def create_dental_appointment(lead_id, activity_subject, activity_type, activity
         'note': activity_note,
     }
     response = requests.post(activity_url, json=activity_data)
+    logger.info(f"Respuesta de crear cita dental: {response.status_code}, {response.text}")
     if response.status_code == 201:
         logger.info("Cita dental creada exitosamente!")
     else:
-        logger.error(f"Error al crear la cita dental: {response.status_code}")
+        logger.error(f"Error al crear la cita dental: {response.status_code}, {response.text}")
 
 # Manejador de eventos para el asistente
 class EventHandler(AssistantEventHandler):
