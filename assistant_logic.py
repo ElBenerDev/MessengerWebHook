@@ -160,16 +160,21 @@ def handle_assistant_response(user_message, user_id):
         else:
             logger.error("No se pudo crear el contacto.")
 
+        return assistant_message, None
+
     except ValueError as ve:
         logger.error(f"Error de validación: {ve}")
-        return f"Hubo un problema con los datos proporcionados: {ve}"
+        return None, f"Hubo un problema con los datos proporcionados: {ve}"
     except Exception as e:
         logger.error(f"Error al procesar el mensaje: {e}")
-        return f"Error interno: {e}"
-
+        return None, f"Error interno: {e}"
 
 
 # Ejemplo de uso
 if __name__ == "__main__":
     user_message = "Hola, quiero agendar una cita mañana por la tarde para una limpieza dental."
-    handle_assistant_response(user_message, "user_123")
+    response, error = handle_assistant_response(user_message, "user_123")
+    if error:
+        print(f"Error: {error}")
+    else:
+        print(f"Respuesta del asistente: {response}")
