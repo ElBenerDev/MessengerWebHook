@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 import pytz  # Asegúrate de instalar esta biblioteca: pip install pytz
 import requests
@@ -109,6 +110,26 @@ class EventHandler(AssistantEventHandler):
             self.assistant_message += delta.value
 
 
+# Función para extraer información del mensaje del usuario
+def extract_user_info(user_message):
+    # Expresiones regulares para extraer nombre, teléfono y correo
+    name_pattern = r"([A-Za-záéíóúÁÉÍÓÚ]+(?: [A-Za-záéíóúÁÉÍÓÚ]+)*)"
+    phone_pattern = r"\(?\+?\d{1,3}\)?[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}"
+    email_pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
+
+    # Buscar nombre, teléfono y correo
+    name_match = re.search(name_pattern, user_message)
+    phone_match = re.search(phone_pattern, user_message)
+    email_match = re.search(email_pattern, user_message)
+
+    # Extraer los valores si están presentes
+    contact_name = name_match.group(0) if name_match else None
+    contact_phone = phone_match.group(0) if phone_match else None
+    contact_email = email_match.group(0) if email_match else None
+
+    return contact_name, contact_phone, contact_email
+
+
 # Procesar respuesta del asistente y registrar cita
 def handle_assistant_response(user_message, user_id):
     try:
@@ -133,10 +154,8 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje del asistente: {assistant_message}")
 
-        # Simulación de extracción de datos (debes reemplazar esto con tu lógica real de extracción)
-        contact_name = "Extraído del mensaje"  # Actualiza esto
-        contact_phone = "Extraído del mensaje"  # Actualiza esto
-        contact_email = "Extraído del mensaje"  # Actualiza esto
+        # Extraer información del mensaje
+        contact_name, contact_phone, contact_email = extract_user_info(user_message)
         activity_due_date = "2025-01-15"  # Simula un valor válido para pruebas
         activity_due_time = "15:00"  # Simula un valor válido para pruebas
 
@@ -172,7 +191,7 @@ def handle_assistant_response(user_message, user_id):
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    user_message = "Hola, quiero agendar una cita mañana por la tarde para una limpieza dental."
+    user_message = "Hola, soy Bernardo Ramirez, mi teléfono es +54 9 11 2345 6789 y mi correo es bernardo@example.com. Quiero agendar una cita mañana por la tarde para una limpieza dental."
     response, error = handle_assistant_response(user_message, "user_123")
     if error:
         print(f"Error: {error}")
