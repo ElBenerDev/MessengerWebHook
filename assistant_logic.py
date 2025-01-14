@@ -6,7 +6,6 @@ from openai import OpenAI
 from typing_extensions import override
 import logging
 import os
-import random
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -128,10 +127,7 @@ class EventHandler:
     def handle_message(self, message):
         self.assistant_message = message['text']
 
-# Procesar respuesta del asistente y registrar cita
-# Diccionario para almacenar la información del usuario y el estado del proceso
-user_data = {}
-
+# Lógica para procesar la respuesta del asistente y crear la cita
 def handle_assistant_response(user_message, user_id):
     global contact_name, contact_phone, contact_email, activity_due_date, activity_due_time
 
@@ -140,7 +136,6 @@ def handle_assistant_response(user_message, user_id):
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             user_threads[user_id] = thread.id
-            user_data[user_id] = {"name": None, "phone": None, "email": None, "appointment_date": None, "appointment_time": None, "lead_created": False}
 
         client.beta.threads.messages.create(
             thread_id=user_threads[user_id],
@@ -164,36 +159,26 @@ def handle_assistant_response(user_message, user_id):
         # Extraer información del mensaje
         contact_name, contact_phone, contact_email = extract_user_info(user_message)
 
-        # Actualizamos los datos del usuario
-        user_data[user_id]["name"] = contact_name
-        user_data[user_id]["phone"] = contact_phone
-        user_data[user_id]["email"] = contact_email
-        user_data[user_id]["appointment_date"] = activity_due_date
-        user_data[user_id]["appointment_time"] = activity_due_time
-
-        # Verificamos si la información está completa
-        if all(user_data[user_id].values()) and not user_data[user_id]["lead_created"]:
-            # Si la información está completa, creamos el contacto, el lead y la cita
-            contact_id = create_patient_contact(user_data[user_id]["name"], phone=user_data[user_id]["phone"], email=user_data[user_id]["email"])
+        # Verificar si la información está completa
+        if contact_name and contact_phone and contact_email:
+            contact_id = create_patient_contact(contact_name, phone=contact_phone, email=contact_email)
             if contact_id:
-                lead_id = create_patient_lead(contact_id, f"Lead para {user_data[user_id]['name']}", get_owner_id())
+                lead_id = create_patient_lead(contact_id, f"Lead para {contact_name}", get_owner_id())
                 if lead_id:
                     create_dental_appointment(
                         lead_id,
-                        f'Cita de Revisión dental para {user_data[user_id]["name"]}',
+                        f'Cita de Revisión dental para {contact_name}',
                         "meeting",
-                        user_data[user_id]["appointment_date"],
-                        user_data[user_id]["appointment_time"],
+                        activity_due_date,
+                        activity_due_time,
                         "00:30",
                         "Tipo de tratamiento: Revisión dental",
                     )
-                    user_data[user_id]["lead_created"] = True
                     logger.info("Lead y cita creados exitosamente!")
                     return assistant_message, None
             else:
                 logger.error("No se pudo crear el contacto.")
                 return assistant_message, "Hubo un problema al crear el contacto."
-
         else:
             logger.info("Esperando más información del usuario.")
             return assistant_message, None
