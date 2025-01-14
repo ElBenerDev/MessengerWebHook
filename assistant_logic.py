@@ -65,6 +65,9 @@ def extract_user_info(user_message):
 # Función para crear un nuevo lead en Pipedrive
 def create_pipedrive_lead(contact_name, contact_phone, contact_email, service, date, time):
     url = f'https://{COMPANY_DOMAIN}.pipedrive.com/api/v1/leads?api_token={PIPEDRIVE_API_KEY}'
+    headers = {
+        'Content-Type': 'application/json',
+    }
     data = {
         'title': f"Lead para {contact_name}",
         'person_name': contact_name,
@@ -74,13 +77,14 @@ def create_pipedrive_lead(contact_name, contact_phone, contact_email, service, d
         'custom_date': f"{date} {time}",
     }
 
-    response = requests.post(url, data=data)
+    response = requests.post(url, headers=headers, json=data)  # Nota el uso de `json=data`
     if response.status_code == 201:
         logger.info(f"Lead creado exitosamente para {contact_name}")
         return response.json()
     else:
         logger.error(f"Error al crear el lead: {response.text}")
         return None
+
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
