@@ -48,7 +48,8 @@ def convert_to_utc(date_str, time_str):
 
 # Función para extraer información del mensaje del usuario
 def extract_user_info(user_message):
-    name_pattern = r"([A-Za-záéíóúÁÉÍÓÚ]+(?: [A-Za-záéíóúÁÉÍÓÚ]+)*)"
+    # Modificamos el patrón del nombre para que extraiga correctamente el nombre después de "soy"
+    name_pattern = r"(?<=soy\s)([A-Za-záéíóúÁÉÍÓÚ]+(?: [A-Za-záéíóúÁÉÍÓÚ]+)*)"
     phone_pattern = r"\(?\+?\d{1,3}\)?[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}"
     email_pattern = r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"
 
