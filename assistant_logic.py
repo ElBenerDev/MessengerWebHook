@@ -1,7 +1,7 @@
 import re
+import requests
 from datetime import datetime
 import pytz
-import requests
 from openai import OpenAI
 from openai import AssistantEventHandler
 from typing_extensions import override
@@ -21,15 +21,15 @@ assistant_id = os.getenv("ASSISTANT_ID", "asst_d2QBbmcrr6vdZgxusPdqNOtY")
 # Diccionario para almacenar los hilos por usuario
 user_threads = {}
 
-# Diccionario para almacenar los datos del cliente
-user_data = {}
-
 # Datos de autenticación para Pipedrive
 PIPEDRIVE_API_KEY = '8f2492eead4201ac69582ee4f3dfefd13d818b79'
 COMPANY_DOMAIN = 'companiademuestra'
 
 # Zona horaria de Argentina
 ARGENTINA_TZ = pytz.timezone('America/Argentina/Buenos_Aires')
+
+# Año fijo
+FIXED_YEAR = 2025
 
 # Función para convertir horario de Argentina a UTC
 def convert_to_utc(date_str, time_str):
@@ -93,6 +93,7 @@ class EventHandler(AssistantEventHandler):
     def __init__(self):
         super().__init__()
         self.assistant_message = ""
+        self.user_data = {}  # Diccionario para almacenar la información del usuario
 
     @override
     def on_text_created(self, text) -> None:
@@ -102,6 +103,55 @@ class EventHandler(AssistantEventHandler):
     def on_text_delta(self, delta, snapshot):
         if not self.assistant_message.endswith(delta.value):
             self.assistant_message += delta.value
+
+    def store_user_info(self, message):
+        # Aquí extraemos los datos del mensaje con expresiones regulares
+        contact_name, contact_phone, contact_email = extract_user_info(message)
+
+        # Si tenemos nombre, teléfono y correo, los almacenamos
+        if contact_name:
+            self.user_data['contact_name'] = contact_name
+        if contact_phone:
+            self.user_data['contact_phone'] = contact_phone
+        if contact_email:
+            self.user_data['contact_email'] = contact_email
+
+        # Si tenemos la fecha y la hora de la cita, la almacenamos
+        date_time_match = re.search(r"(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2})", message)
+        if date_time_match:
+            self.user_data['activity_due_date'] = date_time_match.group(1)
+            self.user_data['activity_due_time'] = date_time_match.group(2)
+
+    def create_lead_and_appointment(self):
+        # Validamos si tenemos toda la información
+        if all(key in self.user_data for key in ['contact_name', 'contact_phone', 'contact_email', 'activity_due_date', 'activity_due_time']):
+            contact_name = self.user_data['contact_name']
+            contact_phone = self.user_data['contact_phone']
+            contact_email = self.user_data['contact_email']
+            activity_due_date = self.user_data['activity_due_date']
+            activity_due_time = self.user_data['activity_due_time']
+
+            # Creamos el contacto, lead y cita
+            contact_id = create_patient_contact(contact_name, phone=contact_phone, email=contact_email)
+            if contact_id:
+                lead_id = create_patient_lead(contact_id, f"Lead para {contact_name}", get_owner_id())
+                if lead_id:
+                    create_dental_appointment(
+                        lead_id,
+                        f'Cita de Revisión dental para {contact_name}',
+                        "meeting",
+                        activity_due_date,
+                        activity_due_time,
+                        "00:30",
+                        "Tipo de tratamiento: Revisión dental",
+                    )
+                    return "Cita agendada exitosamente."
+                else:
+                    return "Hubo un error al crear el lead."
+            else:
+                return "Hubo un error al crear el contacto."
+        else:
+            return "Falta información, por favor completa todos los datos."
 
 # Función para extraer información del mensaje del usuario
 def extract_user_info(user_message):
@@ -125,42 +175,34 @@ def extract_user_info(user_message):
 # Procesar respuesta del asistente y registrar cita
 def handle_assistant_response(user_message, user_id):
     try:
-        # Almacenar temporalmente los datos del cliente
-        if user_id not in user_data:
-            user_data[user_id] = {}
+        if user_id not in user_threads:
+            thread = client.beta.threads.create()
+            user_threads[user_id] = thread.id
 
-        contact_name, contact_phone, contact_email = extract_user_info(user_message)
+        client.beta.threads.messages.create(
+            thread_id=user_threads[user_id],
+            role="user",
+            content=user_message,
+        )
 
-        # Si se encuentra un nombre, teléfono o correo, almacenarlo
-        if contact_name:
-            user_data[user_id]['name'] = contact_name
-        if contact_phone:
-            user_data[user_id]['phone'] = contact_phone
-        if contact_email:
-            user_data[user_id]['email'] = contact_email
+        event_handler = EventHandler()
+        with client.beta.threads.runs.stream(
+            thread_id=user_threads[user_id],
+            assistant_id=assistant_id,
+            event_handler=event_handler,
+        ) as stream:
+            stream.until_done()
 
-        # Verificar si tenemos toda la información necesaria
-        if all(key in user_data[user_id] for key in ['name', 'phone', 'email']):
-            # Crear el contacto, el lead y la cita
-            contact_id = create_patient_contact(user_data[user_id]['name'], user_data[user_id].get('phone'), user_data[user_id].get('email'))
-            if contact_id:
-                lead_id = create_patient_lead(contact_id, f"Lead para {user_data[user_id]['name']}", get_owner_id())
-                if lead_id:
-                    create_dental_appointment(
-                        lead_id,
-                        f'Cita de Revisión dental para {user_data[user_id]["name"]}',
-                        "meeting",
-                        "2025-01-15",
-                        "15:00",
-                        "00:30",
-                        "Tipo de tratamiento: Revisión dental",
-                    )
-            else:
-                logger.error("No se pudo crear el contacto.")
-            # Limpiar los datos del usuario una vez que se ha procesado
-            del user_data[user_id]
-        
-        return "Información procesada correctamente", None
+        assistant_message = event_handler.assistant_message.strip()
+        logger.info(f"Mensaje del asistente: {assistant_message}")
+
+        # Almacenamos la información del usuario
+        event_handler.store_user_info(user_message)
+
+        # Creamos el lead y la cita cuando tengamos toda la información
+        result_message = event_handler.create_lead_and_appointment()
+
+        return assistant_message, result_message
 
     except Exception as e:
         logger.error(f"Error al procesar el mensaje: {e}")
@@ -168,9 +210,9 @@ def handle_assistant_response(user_message, user_id):
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    user_message = "Hola, soy Bernardo Ramirez, mi teléfono es +54 9 11 2345 6789 y mi correo es bernardo@example.com. Quiero agendar una cita mañana por la tarde para una limpieza dental."
-    response, error = handle_assistant_response(user_message, "user_123")
-    if error:
-        print(f"Error: {error}")
+    user_message = "Hola, soy Bernardo Ramirez, mi teléfono es +54 9 11 2345 6789 y mi correo es bernardo@example.com. Quiero agendar una cita para el 2025-01-15 a las 15:00."
+    response, result = handle_assistant_response(user_message, "user_123")
+    if result:
+        print(f"Resultado: {result}")
     else:
         print(f"Respuesta del asistente: {response}")
