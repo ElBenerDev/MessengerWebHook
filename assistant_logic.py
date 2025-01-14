@@ -157,7 +157,8 @@ def handle_assistant_response(user_message, user_id):
         if active_runs and active_runs.data:
             run_id = active_runs.data[0].id
             logger.warning(f"Ejecutando run {run_id} en hilo {thread_id}. Esperando a que termine...")
-            client.beta.threads.runs.cancel(run_id=run_id)
+            client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
+
 
         # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
