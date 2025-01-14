@@ -142,24 +142,34 @@ class EventHandler(AssistantEventHandler):
         if not self.assistant_message.endswith(delta.value):
             self.assistant_message += delta.value
 
-# Lógica principal del asistente (modificada)
 def handle_assistant_response(user_message, user_id):
     try:
+        # Crear un nuevo hilo si no existe
         if user_id not in user_threads:
             thread = client.beta.threads.create()
             logger.info(f"Hilo creado para el usuario {user_id}: {thread.id}")
             user_threads[user_id] = thread.id
 
+        thread_id = user_threads[user_id]
+
+        # Verificar si hay una ejecución activa en el hilo
+        active_runs = client.beta.threads.runs.list(thread_id=thread_id)
+        if active_runs and active_runs.data:
+            run_id = active_runs.data[0].id
+            logger.warning(f"Ejecutando run {run_id} en hilo {thread_id}. Esperando a que termine...")
+            client.beta.threads.runs.cancel(run_id=run_id)
+
         # Enviar el mensaje del usuario al hilo existente
         client.beta.threads.messages.create(
-            thread_id=user_threads[user_id],
+            thread_id=thread_id,
             role="user",
             content=user_message
         )
 
+        # Crear un manejador de eventos
         event_handler = EventHandler()
         with client.beta.threads.runs.stream(
-            thread_id=user_threads[user_id],
+            thread_id=thread_id,
             assistant_id=assistant_id,
             event_handler=event_handler,
         ) as stream:
@@ -168,13 +178,11 @@ def handle_assistant_response(user_message, user_id):
         assistant_message = event_handler.assistant_message.strip()
         logger.info(f"Mensaje generado por el asistente: {assistant_message}")
 
-        # Extraer información del mensaje del usuario
+        # Procesar información del usuario
         contact_name, contact_phone, contact_email = extract_user_info(user_message)
 
         if contact_name and contact_phone and contact_email:
             logger.info(f"Datos extraídos: Nombre: {contact_name}, Teléfono: {contact_phone}, Correo: {contact_email}")
-            
-            # Extraer servicio y fecha
             service_pattern = r"servicio:\s*([A-Za-z\s]+)"
             date_pattern = r"(\d{1,2} de \w+)"
             service_match = re.search(service_pattern, user_message, re.IGNORECASE)
@@ -184,10 +192,8 @@ def handle_assistant_response(user_message, user_id):
             date_str = date_match.group(1) if date_match else "Fecha no especificada"
             time_str = "10:00"  # Asumimos una hora predeterminada si no se encuentra
 
-            # Crear contacto en Pipedrive
             contact_id = create_pipedrive_contact(contact_name, contact_phone, contact_email)
             if contact_id:
-                # Crear lead en Pipedrive
                 create_pipedrive_lead(contact_id, service, date_str, time_str)
 
         return assistant_message, None
@@ -195,6 +201,7 @@ def handle_assistant_response(user_message, user_id):
     except Exception as e:
         logger.error(f"Error al procesar el mensaje: {str(e)}")
         return None, f"Error al procesar el mensaje: {str(e)}"
+
 
 # Ejemplo de uso
 if __name__ == "__main__":
