@@ -3,6 +3,7 @@ from datetime import datetime
 import pytz
 import requests
 from openai import OpenAI
+from openai import AssistantEventHandler
 from typing_extensions import override
 import logging
 import os
@@ -120,12 +121,10 @@ def extract_user_info(user_message):
     return contact_name, contact_phone, contact_email
 
 # Definir el manejador de eventos
-class EventHandler:
+class EventHandler(AssistantEventHandler):
     def __init__(self):
-        self.assistant_message = None
-
-    def handle_message(self, message):
-        self.assistant_message = message['text']
+        super().__init__()
+        self.assistant_message = ""
 
 # Lógica para procesar la respuesta del asistente y crear la cita
 def handle_assistant_response(user_message, user_id):
