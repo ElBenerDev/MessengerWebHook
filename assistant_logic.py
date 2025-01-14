@@ -83,15 +83,32 @@ def create_pipedrive_contact(contact_name, contact_phone, contact_email):
         logger.error(f"Error al crear el contacto: {response.text}")
         return None
 
+# Función para crear un nuevo lead en Pipedrive
 def create_pipedrive_lead(contact_id, service, date, time):
     url = f'https://{COMPANY_DOMAIN}.pipedrive.com/v1/leads?api_token={PIPEDRIVE_API_KEY}'
     headers = {
         'Content-Type': 'application/json',
     }
+
+    # Convertir la fecha en formato YYYY-MM-DD
+    try:
+        formatted_date = datetime.strptime(date, "%d de %B").strftime("%Y-%m-%d")
+    except ValueError as e:
+        logger.error(f"Error al formatear la fecha: {e}")
+        return None
+    
+    # Asegurarse de que la hora esté en formato adecuado
+    try:
+        formatted_time = datetime.strptime(time, "%H:%M").strftime("%H:%M")
+    except ValueError as e:
+        logger.error(f"Error al formatear la hora: {e}")
+        return None
+
     data = {
         'title': f"Cita para {service}",  # Usamos el servicio para el título del lead
         'person_id': contact_id,  # El ID del contacto
-        'date': f"{date} {time}",  # Usamos la fecha y hora del mensaje
+        'date': formatted_date,  # Fecha de la cita
+        'time': formatted_time,  # Hora de la cita
     }
 
     try:
@@ -106,10 +123,6 @@ def create_pipedrive_lead(contact_id, service, date, time):
     except requests.exceptions.RequestException as e:
         logger.error(f"Error de conexión al crear el lead: {e}")
         return None
-
-
-
-
 
 # Crear un manejador de eventos para manejar el stream de respuestas del asistente
 class EventHandler(AssistantEventHandler):
@@ -162,13 +175,13 @@ def handle_assistant_response(user_message, user_id):
             
             # Extraer servicio y fecha
             service_pattern = r"servicio:\s*([A-Za-z\s]+)"
-            date_pattern = r"(\d{1,2} de \w+ a las \d{1,2}:\d{2})"
+            date_pattern = r"(\d{1,2} de \w+)"
             service_match = re.search(service_pattern, user_message, re.IGNORECASE)
             date_match = re.search(date_pattern, user_message)
 
             service = service_match.group(1) if service_match else "Servicio no especificado"
-            date_time_str = date_match.group(1) if date_match else "Fecha no especificada"
-            date_str, time_str = date_time_str.split(" a las ")
+            date_str = date_match.group(1) if date_match else "Fecha no especificada"
+            time_str = "10:00"  # Asumimos una hora predeterminada si no se encuentra
 
             # Crear contacto en Pipedrive
             contact_id = create_pipedrive_contact(contact_name, contact_phone, contact_email)
